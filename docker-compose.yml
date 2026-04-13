@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: usage-gate-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: usage_gate
+      POSTGRES_PASSWORD: usage_gate
+      POSTGRES_DB: usage_gate
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
