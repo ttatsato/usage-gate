@@ -20,7 +20,7 @@ pub struct CreateApiKey {
     pub name: Option<String>,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Clone)]
 pub struct AuthedApiKey {
     pub api_key_id: Uuid,
     pub tenant_id: Uuid,
