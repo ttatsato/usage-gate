@@ -39,7 +39,13 @@ pub async fn auth(
         })?;
 
     match row {
-        Some(_authed) => Ok(next.run(request).await),
+        Some(authed) => {
+            // リクエストの extensions にテナント情報を添付
+            // 後続のミドルウェアやハンドラから取り出せる
+            let mut request = request;
+            request.extensions_mut().insert(authed);
+            Ok(next.run(request).await)
+        }
         None => Err((
             StatusCode::UNAUTHORIZED,
             Json(json!({"error": "Unauthorized"})),
