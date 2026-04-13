@@ -1,23 +1,14 @@
 
-use axum::{Json, routing::get, Router};
-use serde::Serialize;
+use axum::{routing::get, Router};
 use sqlx::postgres::PgPoolOptions;
 
+mod routes;
 
-#[derive(Serialize)]
-struct HealthResponse {
- status: String,
-}
-
-async fn health () -> Json<HealthResponse> {
-    Json(HealthResponse{
-        status: "ok".to_string(),
-    })
-}
+use routes::health::health;
 
 #[tokio::main]
 async fn main() {
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
     let pool = PgPoolOptions::new()
         // NOTE: プール数目安 = CPU コア数 × 2 + 1
@@ -34,7 +25,8 @@ async fn main() {
     .init();
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
-    let app = Router::new().route("/health", get(health));
+    let app = Router::new().route("/health", get(health)).
+        with_state(pool);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port).await.expect("Failed to bind port");
 
