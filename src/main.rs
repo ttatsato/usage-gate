@@ -1,10 +1,12 @@
 
-use axum::{routing::get, Router};
+use axum::{routing::{get, post}, Router};
 use sqlx::postgres::PgPoolOptions;
 
+mod models;
 mod routes;
 
 use routes::health::health;
+use routes::admin::tenants::{list_tenants, create_tenant};
 
 #[tokio::main]
 async fn main() {
@@ -25,8 +27,9 @@ async fn main() {
     .init();
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
-    let app = Router::new().route("/health", get(health)).
-        with_state(pool);
+    let app = Router::new().route("/health", get(health))
+        .route("/admin/tenants", post(create_tenant).get(list_tenants))
+        .with_state(pool);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port).await.expect("Failed to bind port");
 
