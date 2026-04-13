@@ -7,6 +7,7 @@ mod routes;
 
 use routes::health::health;
 use routes::admin::tenants::{list_tenants, create_tenant};
+use routes::admin::api_keys::{create_api_key, list_api_keys};
 
 #[tokio::main]
 async fn main() {
@@ -29,6 +30,7 @@ async fn main() {
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
     let app = Router::new().route("/health", get(health))
         .route("/admin/tenants", post(create_tenant).get(list_tenants))
+        .route("/admin/api-keys", post(create_api_key).get(list_api_keys))
         .with_state(pool);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port).await.expect("Failed to bind port");
