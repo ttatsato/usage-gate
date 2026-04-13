@@ -4,6 +4,7 @@ use sqlx::postgres::PgPoolOptions;
 
 mod middleware;
 mod models;
+mod repositories;
 mod routes;
 
 use middleware::auth::auth;

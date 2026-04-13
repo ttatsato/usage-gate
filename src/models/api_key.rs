@@ -19,3 +19,10 @@ pub struct CreateApiKey {
     pub tenant_id: Uuid,
     pub name: Option<String>,
 }
+
+#[derive(sqlx::FromRow)]
+pub struct AuthedApiKey {
+    pub api_key_id: Uuid,
+    pub tenant_id: Uuid,
+    pub plan: String,
+}

@@ -7,6 +7,7 @@ use axum::{
 };
 use sqlx::PgPool;
 use serde_json::json;
+use crate::repositories::api_key_repository;
 
 pub async fn auth(
     State(pool): State<PgPool>,
@@ -28,22 +29,14 @@ pub async fn auth(
         }
     };
 
-    let row = sqlx::query_as!(
-        AuthedApiKey,
-        r#"SELECT ak.id as api_key_id, ak.tenant_id, t.plan
-        FROM api_keys ak
-        JOIN tenants t ON t.id = ak.tenant_id
-        WHERE ak.key = $1 AND ak.is_active = true"#,
-        api_key,
-    )
-    .fetch_optional(&pool)
-    .await
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Internal server error"})),
-        )
-    })?;
+    let row = api_key_repository::find_active_api_key(&pool, api_key)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Internal server error"})),
+            )
+        })?;
 
     match row {
         Some(_authed) => Ok(next.run(request).await),
@@ -52,11 +45,4 @@ pub async fn auth(
             Json(json!({"error": "Unauthorized"})),
         )),
     }
-}
-
-#[derive(sqlx::FromRow)]
-struct AuthedApiKey {
-    pub api_key_id: uuid::Uuid,
-    pub tenant_id: uuid::Uuid,
-    pub plan: String,
 }
