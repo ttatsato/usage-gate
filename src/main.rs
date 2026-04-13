@@ -8,6 +8,7 @@ mod repositories;
 mod routes;
 
 use middleware::auth::auth;
+use middleware::metering::metering;
 use routes::health::health;
 use routes::admin::tenants::{list_tenants, create_tenant};
 use routes::admin::api_keys::{create_api_key, list_api_keys};
@@ -33,8 +34,11 @@ async fn main() {
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
 
     // 認証が必要なルート（プロキシなど、今後ここに追加）
+    // ミドルウェアの実行順: auth → metering → ハンドラ → metering(記録) → レスポンス
+    // route_layer は下から順に適用されるので、auth を後に書く
     let protected_routes = Router::new()
         .route("/proxy/test", get(|| async { "ok" }))
+        .route_layer(axum_middleware::from_fn_with_state(pool.clone(), metering))
         .route_layer(axum_middleware::from_fn_with_state(pool.clone(), auth));
 
     // 認証不要なルート
