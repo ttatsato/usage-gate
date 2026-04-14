@@ -118,21 +118,27 @@ async fn proxy_with_valid_api_key_returns_200() {
     .await
     .unwrap();
 
-    let api_key = sqlx::query!(
-        r#"INSERT INTO api_keys (tenant_id, consumer_id, key, name) VALUES ($1, $2, $3, $4) RETURNING key"#,
+    // テスト用の平文キーとハッシュ
+    let raw_key = "test-api-key-12345";
+    let key_hash = usage_gate::utils::hash::hash_api_key(raw_key);
+    let key_prefix = &raw_key[..8];
+
+    sqlx::query!(
+        r#"INSERT INTO api_keys (tenant_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5)"#,
         tenant.id,
         consumer.id,
-        "test-api-key-12345",
+        key_hash,
+        key_prefix,
         "test-key",
     )
-    .fetch_one(&pool)
+    .execute(&pool)
     .await
     .unwrap();
 
     let response = app
         .oneshot(
             Request::get("/proxy/test")
-                .header("x-api-key", &api_key.key)
+                .header("x-api-key", raw_key)
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )

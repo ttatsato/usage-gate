@@ -2,6 +2,7 @@ pub mod middleware;
 pub mod models;
 pub mod repositories;
 pub mod routes;
+pub mod utils;
 
 use axum::{middleware as axum_middleware, routing::{get, post}, Router};
 use sqlx::PgPool;
