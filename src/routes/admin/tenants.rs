@@ -3,24 +3,9 @@ use axum::Json;
 use axum::extract::State;
 use sqlx::PgPool;
 
-<<<<<<< HEAD
-pub async fn create_tenant(
-    State(pool): State<PgPool>,
-    Json(body): Json<CreateTenant>,
-) -> Json<Tenant> {
-    let plan = body.plan.unwrap_or_else(|| "free".to_string());
-    let tenant = sqlx::query_as!(
-        Tenant,
-        "INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING *",
-        &body.name,
-        &plan,
-=======
-
-
 pub async fn create_tenant(State(pool): State<PgPool>, Json(body): Json<CreateTenant>) -> Json<Tenant> {
     let tenant = sqlx::query_as!(Tenant,"INSERT INTO tenants (name) VALUES ($1) RETURNING *",
         &body.name
->>>>>>> 62ec47f (change: plan & tenant schema)
     )
     .fetch_one(&pool)
     .await
