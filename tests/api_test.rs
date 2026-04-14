@@ -65,7 +65,6 @@ async fn create_and_list_tenants() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_json(response).await;
     assert_eq!(body["name"], "test-tenant");
-    assert_eq!(body["plan"], "free");
 
     // ロールバック（テストデータを残さない）
     tx.rollback().await.unwrap();
@@ -112,9 +111,8 @@ async fn proxy_with_valid_api_key_returns_200() {
 
     // テスト用テナントと API キーを直接 DB に作成
     let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING id"#,
+        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
         "test-tenant",
-        "free",
     )
     .fetch_one(&pool)
     .await
@@ -181,9 +179,8 @@ async fn create_consumer() {
 
     // テスト用テナントを作成
     let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING id"#,
+        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
         "test-tenant-for-consumer",
-        "free",
     )
     .fetch_one(&pool)
     .await
@@ -227,9 +224,8 @@ async fn create_consumer_without_external_id() {
     let (app, pool) = setup().await;
 
     let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING id"#,
+        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
         "test-tenant-for-consumer-no-ext",
-        "free",
     )
     .fetch_one(&pool)
     .await
