@@ -109,9 +109,19 @@ async fn proxy_with_valid_api_key_returns_200() {
     .await
     .unwrap();
 
-    let api_key = sqlx::query!(
-        r#"INSERT INTO api_keys (tenant_id, key, name) VALUES ($1, $2, $3) RETURNING key"#,
+    // consumer を作成
+    let consumer = sqlx::query!(
+        r#"INSERT INTO consumers (tenant_id) VALUES ($1) RETURNING id"#,
         tenant.id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let api_key = sqlx::query!(
+        r#"INSERT INTO api_keys (tenant_id, consumer_id, key, name) VALUES ($1, $2, $3, $4) RETURNING key"#,
+        tenant.id,
+        consumer.id,
         "test-api-key-12345",
         "test-key",
     )
@@ -131,8 +141,92 @@ async fn proxy_with_valid_api_key_returns_200() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    // テストデータを削除
+    // テストデータを削除（外部キーの順番に注意: api_keys → consumers → tenants）
     sqlx::query!("DELETE FROM api_keys WHERE tenant_id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+}
+
+// --- Consumer ---
+
+#[tokio::test]
+async fn create_consumer() {
+    let (app, pool) = setup().await;
+
+    // テスト用テナントを作成
+    let tenant = sqlx::query!(
+        r#"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING id"#,
+        "test-tenant-for-consumer",
+        "free",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // consumer 作成リクエスト
+    let response = app
+        .oneshot(
+            Request::post("/admin/consumers")
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(
+                    serde_json::to_string(&json!({
+                        "tenant_id": tenant.id.to_string(),
+                        "external_id": "user_12345"
+                    })).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_json(response).await;
+    assert_eq!(body["tenant_id"], tenant.id.to_string());
+    assert_eq!(body["external_id"], "user_12345");
+
+    // テストデータを削除
+    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn create_consumer_without_external_id() {
+    let (app, pool) = setup().await;
+
+    let tenant = sqlx::query!(
+        r#"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING id"#,
+        "test-tenant-for-consumer-no-ext",
+        "free",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // external_id を省略
+    let response = app
+        .oneshot(
+            Request::post("/admin/consumers")
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(
+                    serde_json::to_string(&json!({
+                        "tenant_id": tenant.id.to_string()
+                    })).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_json(response).await;
+    assert_eq!(body["external_id"], Value::Null);
+
+    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
         .execute(&pool).await.unwrap();
     sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
         .execute(&pool).await.unwrap();
