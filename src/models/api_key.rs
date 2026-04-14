@@ -7,6 +7,7 @@ use sqlx::FromRow;
 pub struct ApiKey {
     pub id: Uuid,
     pub tenant_id: Uuid,
+    pub consumer_id: Uuid,
     pub key: Option<String>,
     pub name: Option<String>,
     pub is_active: bool,
@@ -16,7 +17,7 @@ pub struct ApiKey {
 
 #[derive(Deserialize)]
 pub struct CreateApiKey {
-    pub tenant_id: Uuid,
+    pub consumer_id: Uuid,
     pub name: Option<String>,
 }
 
