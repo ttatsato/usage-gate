@@ -14,6 +14,8 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chro
 dotenvy = "0.15"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
+sha2="0.10"
+hex="0.4"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

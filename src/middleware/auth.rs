@@ -8,6 +8,7 @@ use axum::{
 use sqlx::PgPool;
 use serde_json::json;
 use crate::repositories::api_key_repository;
+use crate::utils::hash::hash_api_key;
 
 pub async fn auth(
     State(pool): State<PgPool>,
@@ -29,7 +30,9 @@ pub async fn auth(
         }
     };
 
-    let row = api_key_repository::find_active_api_key(&pool, api_key)
+    // 受け取ったキーをハッシュ化して DB と照合
+    let key_hash = hash_api_key(api_key);
+    let row = api_key_repository::find_active_by_key_hash(&pool, &key_hash)
         .await
         .map_err(|_| {
             (

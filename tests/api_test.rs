@@ -109,20 +109,36 @@ async fn proxy_with_valid_api_key_returns_200() {
     .await
     .unwrap();
 
-    let api_key = sqlx::query!(
-        r#"INSERT INTO api_keys (tenant_id, key, name) VALUES ($1, $2, $3) RETURNING key"#,
+    // consumer を作成
+    let consumer = sqlx::query!(
+        r#"INSERT INTO consumers (tenant_id) VALUES ($1) RETURNING id"#,
         tenant.id,
-        "test-api-key-12345",
-        "test-key",
     )
     .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // テスト用の平文キーとハッシュ
+    let raw_key = "test-api-key-12345";
+    let key_hash = usage_gate::utils::hash::hash_api_key(raw_key);
+    let key_prefix = &raw_key[..8];
+
+    sqlx::query!(
+        r#"INSERT INTO api_keys (tenant_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5)"#,
+        tenant.id,
+        consumer.id,
+        key_hash,
+        key_prefix,
+        "test-key",
+    )
+    .execute(&pool)
     .await
     .unwrap();
 
     let response = app
         .oneshot(
             Request::get("/proxy/test")
-                .header("x-api-key", &api_key.key)
+                .header("x-api-key", raw_key)
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )
@@ -131,8 +147,92 @@ async fn proxy_with_valid_api_key_returns_200() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    // テストデータを削除
+    // テストデータを削除（外部キーの順番に注意: api_keys → consumers → tenants）
     sqlx::query!("DELETE FROM api_keys WHERE tenant_id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+}
+
+// --- Consumer ---
+
+#[tokio::test]
+async fn create_consumer() {
+    let (app, pool) = setup().await;
+
+    // テスト用テナントを作成
+    let tenant = sqlx::query!(
+        r#"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING id"#,
+        "test-tenant-for-consumer",
+        "free",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // consumer 作成リクエスト
+    let response = app
+        .oneshot(
+            Request::post("/admin/consumers")
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(
+                    serde_json::to_string(&json!({
+                        "tenant_id": tenant.id.to_string(),
+                        "external_id": "user_12345"
+                    })).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_json(response).await;
+    assert_eq!(body["tenant_id"], tenant.id.to_string());
+    assert_eq!(body["external_id"], "user_12345");
+
+    // テストデータを削除
+    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
+        .execute(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn create_consumer_without_external_id() {
+    let (app, pool) = setup().await;
+
+    let tenant = sqlx::query!(
+        r#"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING id"#,
+        "test-tenant-for-consumer-no-ext",
+        "free",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // external_id を省略
+    let response = app
+        .oneshot(
+            Request::post("/admin/consumers")
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(
+                    serde_json::to_string(&json!({
+                        "tenant_id": tenant.id.to_string()
+                    })).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_json(response).await;
+    assert_eq!(body["external_id"], Value::Null);
+
+    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
         .execute(&pool).await.unwrap();
     sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
         .execute(&pool).await.unwrap();
