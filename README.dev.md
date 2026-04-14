@@ -1,4 +1,10 @@
 
+# Install Rust Components
+フォーマッターとリンターをインストール
+```
+rustup component add rustfmt clippy
+```
+
 # Ready env file
 ```
 cp .env.example .env
@@ -33,4 +39,10 @@ sqlx migrate run
 ```
 docker exec -it usage-gate-db psql -U usage_gate -d usage_gate -c '\dt'
 docker exec -it usage-gate-db psql -U usage_gate -d usage_gate -c '\d tenants'
+```
+
+## Format & Lint
+```
+cargo fmt           # コード整形
+cargo clippy        # 静的解析
 ```
