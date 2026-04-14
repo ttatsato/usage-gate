@@ -28,6 +28,7 @@ pub async fn metering(State(pool): State<PgPool>, request: Request, next: Next) 
             let _ = usage_repository::record_usage(
                 &pool,
                 authed.tenant_id,
+                authed.project_id,
                 authed.consumer_id,
                 authed.api_key_id,
                 &endpoint,
