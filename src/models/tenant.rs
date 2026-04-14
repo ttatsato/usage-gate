@@ -14,5 +14,4 @@ pub struct Tenant {
 #[derive(Deserialize)]
 pub struct CreateTenant {
     pub name: String,
-
 }
