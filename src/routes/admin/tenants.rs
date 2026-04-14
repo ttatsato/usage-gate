@@ -7,12 +7,10 @@ pub async fn create_tenant(
     State(pool): State<PgPool>,
     Json(body): Json<CreateTenant>,
 ) -> Json<Tenant> {
-    let plan = body.plan.unwrap_or_else(|| "free".to_string());
     let tenant = sqlx::query_as!(
         Tenant,
-        "INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING *",
-        &body.name,
-        &plan,
+        "INSERT INTO tenants (name) VALUES ($1) RETURNING *",
+        &body.name
     )
     .fetch_one(&pool)
     .await

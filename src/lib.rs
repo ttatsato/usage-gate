@@ -12,6 +12,7 @@ use sqlx::PgPool;
 
 use middleware::auth::auth;
 use middleware::metering::metering;
+use middleware::quota::quota;
 use routes::admin::api_keys::{create_api_key, list_api_keys};
 use routes::admin::consumers::create_consumer;
 use routes::admin::tenants::{create_tenant, list_tenants};
@@ -22,6 +23,7 @@ pub fn create_router(pool: PgPool) -> Router {
     let protected_routes = Router::new()
         .route("/proxy/test", get(|| async { "ok" }))
         .route_layer(axum_middleware::from_fn_with_state(pool.clone(), metering))
+        .route_layer(axum_middleware::from_fn_with_state(pool.clone(), quota))
         .route_layer(axum_middleware::from_fn_with_state(pool.clone(), auth));
 
     let public_routes = Router::new()

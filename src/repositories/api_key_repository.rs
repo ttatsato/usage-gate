@@ -8,9 +8,16 @@ pub async fn find_active_by_key_hash(
 ) -> Result<Option<AuthedApiKey>, sqlx::Error> {
     sqlx::query_as!(
         AuthedApiKey,
-        r#"SELECT ak.id as api_key_id, ak.tenant_id, t.plan
+        r#"SELECT
+            ak.id as api_key_id,
+            ak.tenant_id,
+            ak.consumer_id,
+            p.id as "plan_id?",
+            p.name as "plan_name?",
+            p.monthly_request_quota
         FROM api_keys ak
-        JOIN tenants t ON t.id = ak.tenant_id
+        JOIN consumers c ON c.id = ak.consumer_id
+        LEFT JOIN plans p ON p.id = c.plan_id
         WHERE ak.key_hash = $1 AND ak.is_active = true"#,
         key_hash,
     )
