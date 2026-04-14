@@ -1,12 +1,12 @@
+use crate::models::api_key::{ApiKey, CreateApiKey, CreatedApiKey};
+use crate::repositories::{api_key_repository, consumer_repository};
+use crate::utils::hash::hash_api_key;
 use axum::{
     extract::{Json, State},
     http::StatusCode,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::api_key::{ApiKey, CreateApiKey, CreatedApiKey};
-use crate::repositories::{api_key_repository, consumer_repository};
-use crate::utils::hash::hash_api_key;
 
 pub async fn create_api_key(
     State(pool): State<PgPool>,
@@ -14,10 +14,12 @@ pub async fn create_api_key(
 ) -> Result<(StatusCode, Json<CreatedApiKey>), (StatusCode, Json<serde_json::Value>)> {
     let consumer = consumer_repository::find_by_id(&pool, body.consumer_id)
         .await
-        .map_err(|_| (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "Internal server error"})),
-        ))?
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Internal server error"})),
+            )
+        })?
         .ok_or((
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Consumer not found"})),
@@ -37,10 +39,12 @@ pub async fn create_api_key(
         body.name.as_deref(),
     )
     .await
-    .map_err(|_| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({"error": "Failed to create api key"})),
-    ))?;
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Failed to create api key"})),
+        )
+    })?;
 
     // 発行時のみ平文キーを含めてレスポンス
     let created = CreatedApiKey {
@@ -58,9 +62,7 @@ pub async fn create_api_key(
     Ok((StatusCode::CREATED, Json(created)))
 }
 
-pub async fn list_api_keys(
-    State(pool): State<PgPool>,
-) -> Json<Vec<ApiKey>> {
+pub async fn list_api_keys(State(pool): State<PgPool>) -> Json<Vec<ApiKey>> {
     let api_keys = api_key_repository::list_all(&pool)
         .await
         .expect("Failed to list api keys");

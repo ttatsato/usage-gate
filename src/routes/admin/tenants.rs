@@ -1,20 +1,22 @@
-
+use crate::models::tenant::{CreateTenant, Tenant};
+use axum::Json;
 use axum::extract::State;
 use sqlx::PgPool;
-use axum::Json;
-use crate::models::tenant::{CreateTenant, Tenant};
 
-
-
-pub async fn create_tenant(State(pool): State<PgPool>, Json(body): Json<CreateTenant>) -> Json<Tenant> {
+pub async fn create_tenant(
+    State(pool): State<PgPool>,
+    Json(body): Json<CreateTenant>,
+) -> Json<Tenant> {
     let plan = body.plan.unwrap_or_else(|| "free".to_string());
-    let tenant = sqlx::query_as!(Tenant,"INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING *",
+    let tenant = sqlx::query_as!(
+        Tenant,
+        "INSERT INTO tenants (name, plan) VALUES ($1, $2) RETURNING *",
         &body.name,
         &plan,
     )
-        .fetch_one(&pool)
-        .await
-        .expect("Faild to create tenant");
+    .fetch_one(&pool)
+    .await
+    .expect("Faild to create tenant");
 
     Json(tenant)
 }

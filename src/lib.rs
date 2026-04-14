@@ -4,16 +4,19 @@ pub mod repositories;
 pub mod routes;
 pub mod utils;
 
-use axum::{middleware as axum_middleware, routing::{get, post}, Router};
+use axum::{
+    Router, middleware as axum_middleware,
+    routing::{get, post},
+};
 use sqlx::PgPool;
 
 use middleware::auth::auth;
 use middleware::metering::metering;
-use routes::health::health;
-use routes::admin::tenants::{list_tenants, create_tenant};
 use routes::admin::api_keys::{create_api_key, list_api_keys};
+use routes::admin::consumers::create_consumer;
+use routes::admin::tenants::{create_tenant, list_tenants};
 use routes::admin::usage::get_usage;
-use routes::admin::consumers::{create_consumer};
+use routes::health::health;
 
 pub fn create_router(pool: PgPool) -> Router {
     let protected_routes = Router::new()
@@ -28,7 +31,5 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/admin/usage", get(get_usage))
         .route("/admin/consumers", post(create_consumer));
 
-    public_routes
-        .merge(protected_routes)
-        .with_state(pool)
+    public_routes.merge(protected_routes).with_state(pool)
 }

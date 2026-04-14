@@ -1,4 +1,4 @@
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 // API キーを SHA-256 でハッシュ化して16進文字列で返す
 pub fn hash_api_key(key: &str) -> String {

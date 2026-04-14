@@ -1,4 +1,4 @@
-pub mod tenant;
 pub mod api_key;
-pub mod usage_record;
 pub mod consumer;
+pub mod tenant;
+pub mod usage_record;
