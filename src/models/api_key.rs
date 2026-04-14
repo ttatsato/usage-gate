@@ -40,5 +40,9 @@ pub struct CreatedApiKey {
 pub struct AuthedApiKey {
     pub api_key_id: Uuid,
     pub tenant_id: Uuid,
-    pub plan: String,
+    pub consumer_id: Uuid,
+    // プラン未割当の consumer も許容するため Option
+    pub plan_id: Option<Uuid>,
+    pub plan_name: Option<String>,
+    pub monthly_request_quota: Option<i32>,
 }
