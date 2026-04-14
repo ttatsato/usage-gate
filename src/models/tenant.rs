@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use chrono::DateTime;
 use chrono::Utc;
-
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(sqlx::FromRow, Serialize)]
 pub struct Tenant {
@@ -12,7 +11,6 @@ pub struct Tenant {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
-
 
 #[derive(Deserialize)]
 pub struct CreateTenant {

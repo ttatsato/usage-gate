@@ -1,14 +1,14 @@
+use crate::repositories::api_key_repository;
+use crate::utils::hash::hash_api_key;
 use axum::{
+    Json,
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::Response,
-    Json,
 };
-use sqlx::PgPool;
 use serde_json::json;
-use crate::repositories::api_key_repository;
-use crate::utils::hash::hash_api_key;
+use sqlx::PgPool;
 
 pub async fn auth(
     State(pool): State<PgPool>,

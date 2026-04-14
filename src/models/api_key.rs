@@ -1,7 +1,7 @@
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use uuid::Uuid;
 
 // DB レコード表現（key_hash は API レスポンスに含めない）
 #[derive(FromRow, Serialize)]

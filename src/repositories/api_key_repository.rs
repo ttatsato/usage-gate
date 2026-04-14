@@ -1,6 +1,6 @@
+use crate::models::api_key::{ApiKey, AuthedApiKey};
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::api_key::{ApiKey, AuthedApiKey};
 
 pub async fn find_active_by_key_hash(
     pool: &PgPool,

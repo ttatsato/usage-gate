@@ -1,7 +1,7 @@
-use crate::models::consumer::{CreateConsumer, Consumer};
+use crate::models::consumer::{Consumer, CreateConsumer};
 use axum::{
     extract::{Json, State},
-    http::StatusCode
+    http::StatusCode,
 };
 use sqlx::PgPool;
 

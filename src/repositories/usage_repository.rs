@@ -1,7 +1,7 @@
+use crate::models::usage_record::UsageSummary;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::usage_record::UsageSummary;
 
 // 使用量を1件記録する
 pub async fn record_usage(
