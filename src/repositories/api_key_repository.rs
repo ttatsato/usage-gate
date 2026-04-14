@@ -11,6 +11,7 @@ pub async fn find_active_by_key_hash(
         r#"SELECT
             ak.id as api_key_id,
             ak.tenant_id,
+            ak.project_id,
             ak.consumer_id,
             p.id as "plan_id?",
             p.name as "plan_name?",
@@ -28,6 +29,7 @@ pub async fn find_active_by_key_hash(
 pub async fn create(
     pool: &PgPool,
     tenant_id: Uuid,
+    project_id: Uuid,
     consumer_id: Uuid,
     key_hash: &str,
     key_prefix: &str,
@@ -35,11 +37,12 @@ pub async fn create(
 ) -> Result<ApiKey, sqlx::Error> {
     sqlx::query_as!(
         ApiKey,
-        r#"INSERT INTO api_keys (tenant_id, consumer_id, key_hash, key_prefix, name)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, tenant_id, consumer_id, key_prefix, name, is_active,
+        r#"INSERT INTO api_keys (tenant_id, project_id, consumer_id, key_hash, key_prefix, name)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, tenant_id, project_id, consumer_id, key_prefix, name, is_active,
                   created_at as "created_at!", updated_at as "updated_at!""#,
         tenant_id,
+        project_id,
         consumer_id,
         key_hash,
         key_prefix,
@@ -52,7 +55,7 @@ pub async fn create(
 pub async fn list_all(pool: &PgPool) -> Result<Vec<ApiKey>, sqlx::Error> {
     sqlx::query_as!(
         ApiKey,
-        r#"SELECT id, tenant_id, consumer_id, key_prefix, name, is_active,
+        r#"SELECT id, tenant_id, project_id, consumer_id, key_prefix, name, is_active,
            created_at as "created_at!", updated_at as "updated_at!"
            FROM api_keys ORDER BY created_at DESC"#,
     )

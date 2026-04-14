@@ -4,7 +4,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
 
-// テスト用のアプリを作成する
 async fn setup() -> (axum::Router, PgPool) {
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
@@ -15,10 +14,52 @@ async fn setup() -> (axum::Router, PgPool) {
     (app, pool)
 }
 
-// レスポンスボディを JSON にパースする
 async fn to_json(response: axum::response::Response) -> Value {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     serde_json::from_slice(&body).unwrap()
+}
+
+// テナント + プロジェクトを作る共通ヘルパー
+async fn create_tenant_and_project(pool: &PgPool, tenant_name: &str) -> (uuid::Uuid, uuid::Uuid) {
+    let tenant = sqlx::query!(
+        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
+        tenant_name,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let project = sqlx::query!(
+        r#"INSERT INTO projects (tenant_id, name) VALUES ($1, $2) RETURNING id"#,
+        tenant.id,
+        "default",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (tenant.id, project.id)
+}
+
+async fn cleanup(pool: &PgPool, tenant_id: uuid::Uuid) {
+    sqlx::query!("DELETE FROM usage_records WHERE tenant_id = $1", tenant_id)
+        .execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM api_keys WHERE tenant_id = $1", tenant_id)
+        .execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant_id)
+        .execute(pool).await.unwrap();
+    sqlx::query!(
+        "DELETE FROM plans WHERE project_id IN (SELECT id FROM projects WHERE tenant_id = $1)",
+        tenant_id,
+    )
+    .execute(pool).await.unwrap();
+    sqlx::query!(
+        "DELETE FROM upstream_services WHERE project_id IN (SELECT id FROM projects WHERE tenant_id = $1)",
+        tenant_id,
+    )
+    .execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM projects WHERE tenant_id = $1", tenant_id)
+        .execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant_id)
+        .execute(pool).await.unwrap();
 }
 
 // --- Health ---
@@ -42,20 +83,15 @@ async fn health_returns_ok() {
 // --- Tenant ---
 
 #[tokio::test]
-async fn create_and_list_tenants() {
-    let (app, pool) = setup().await;
+async fn create_tenant_returns_tenant() {
+    let (app, _pool) = setup().await;
 
-    // トランザクションでテストデータを隔離
-    let mut tx = pool.begin().await.unwrap();
-
-    // テナント作成
     let response = app
-        .clone()
         .oneshot(
             Request::post("/admin/tenants")
                 .header("Content-Type", "application/json")
                 .body(axum::body::Body::from(
-                    serde_json::to_string(&json!({"name": "test-tenant"})).unwrap(),
+                    serde_json::to_string(&json!({"name": "test-tenant-basic"})).unwrap(),
                 ))
                 .unwrap(),
         )
@@ -64,10 +100,7 @@ async fn create_and_list_tenants() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_json(response).await;
-    assert_eq!(body["name"], "test-tenant");
-
-    // ロールバック（テストデータを残さない）
-    tx.rollback().await.unwrap();
+    assert_eq!(body["name"], "test-tenant-basic");
 }
 
 // --- Auth Middleware ---
@@ -109,32 +142,25 @@ async fn proxy_with_invalid_api_key_returns_401() {
 async fn proxy_with_valid_api_key_returns_200() {
     let (app, pool) = setup().await;
 
-    // テスト用テナントと API キーを直接 DB に作成
-    let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
-        "test-tenant",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-auth").await;
 
-    // consumer を作成
     let consumer = sqlx::query!(
-        r#"INSERT INTO consumers (tenant_id) VALUES ($1) RETURNING id"#,
-        tenant.id,
+        r#"INSERT INTO consumers (tenant_id, project_id) VALUES ($1, $2) RETURNING id"#,
+        tenant_id,
+        project_id,
     )
     .fetch_one(&pool)
     .await
     .unwrap();
 
-    // テスト用の平文キーとハッシュ
     let raw_key = "test-api-key-12345";
     let key_hash = usage_gate::utils::hash::hash_api_key(raw_key);
     let key_prefix = &raw_key[..8];
 
     sqlx::query!(
-        r#"INSERT INTO api_keys (tenant_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5)"#,
-        tenant.id,
+        r#"INSERT INTO api_keys (tenant_id, project_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5, $6)"#,
+        tenant_id,
+        project_id,
         consumer.id,
         key_hash,
         key_prefix,
@@ -156,44 +182,23 @@ async fn proxy_with_valid_api_key_returns_200() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    // テストデータを削除（外部キーの順番に注意: api_keys → consumers → tenants）
-    sqlx::query!("DELETE FROM api_keys WHERE tenant_id = $1", tenant.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    cleanup(&pool, tenant_id).await;
 }
 
 // --- Consumer ---
 
 #[tokio::test]
-async fn create_consumer() {
+async fn create_consumer_basic() {
     let (app, pool) = setup().await;
+    let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-consumer").await;
 
-    // テスト用テナントを作成
-    let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
-        "test-tenant-for-consumer",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-
-    // consumer 作成リクエスト
     let response = app
         .oneshot(
             Request::post("/admin/consumers")
                 .header("Content-Type", "application/json")
                 .body(axum::body::Body::from(
                     serde_json::to_string(&json!({
-                        "tenant_id": tenant.id.to_string(),
+                        "project_id": project_id.to_string(),
                         "external_id": "user_12345"
                     }))
                     .unwrap(),
@@ -205,40 +210,25 @@ async fn create_consumer() {
 
     assert_eq!(response.status(), StatusCode::CREATED);
     let body = to_json(response).await;
-    assert_eq!(body["tenant_id"], tenant.id.to_string());
+    assert_eq!(body["project_id"], project_id.to_string());
+    assert_eq!(body["tenant_id"], tenant_id.to_string());
     assert_eq!(body["external_id"], "user_12345");
 
-    // テストデータを削除
-    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    cleanup(&pool, tenant_id).await;
 }
 
 #[tokio::test]
 async fn create_consumer_without_external_id() {
     let (app, pool) = setup().await;
+    let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-consumer-no-ext").await;
 
-    let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
-        "test-tenant-for-consumer-no-ext",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-
-    // external_id を省略
     let response = app
         .oneshot(
             Request::post("/admin/consumers")
                 .header("Content-Type", "application/json")
                 .body(axum::body::Body::from(
                     serde_json::to_string(&json!({
-                        "tenant_id": tenant.id.to_string()
+                        "project_id": project_id.to_string()
                     }))
                     .unwrap(),
                 ))
@@ -251,14 +241,7 @@ async fn create_consumer_without_external_id() {
     let body = to_json(response).await;
     assert_eq!(body["external_id"], Value::Null);
 
-    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    cleanup(&pool, tenant_id).await;
 }
 
 // --- Quota Middleware ---
@@ -266,19 +249,11 @@ async fn create_consumer_without_external_id() {
 #[tokio::test]
 async fn proxy_returns_403_when_monthly_quota_exceeded() {
     let (app, pool) = setup().await;
+    let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-quota").await;
 
-    let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
-        "test-tenant-quota",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-
-    // 月次上限 2 回のプラン
     let plan = sqlx::query!(
-        r#"INSERT INTO plans (tenant_id, name, monthly_request_quota) VALUES ($1, $2, $3) RETURNING id"#,
-        tenant.id,
+        r#"INSERT INTO plans (project_id, name, monthly_request_quota) VALUES ($1, $2, $3) RETURNING id"#,
+        project_id,
         "quota-test-plan",
         2i32,
     )
@@ -287,8 +262,9 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
     .unwrap();
 
     let consumer = sqlx::query!(
-        r#"INSERT INTO consumers (tenant_id, plan_id) VALUES ($1, $2) RETURNING id"#,
-        tenant.id,
+        r#"INSERT INTO consumers (tenant_id, project_id, plan_id) VALUES ($1, $2, $3) RETURNING id"#,
+        tenant_id,
+        project_id,
         plan.id,
     )
     .fetch_one(&pool)
@@ -300,8 +276,9 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
     let key_prefix = &raw_key[..8];
 
     let api_key = sqlx::query!(
-        r#"INSERT INTO api_keys (tenant_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5) RETURNING id"#,
-        tenant.id,
+        r#"INSERT INTO api_keys (tenant_id, project_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"#,
+        tenant_id,
+        project_id,
         consumer.id,
         key_hash,
         key_prefix,
@@ -311,13 +288,13 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
     .await
     .unwrap();
 
-    // メータリングは非同期なのでタイミングが不安定。
-    // 先に上限分の使用量を直接 INSERT しておく。
+    // 上限分の使用量を直接 INSERT
     for _ in 0..2 {
         sqlx::query!(
-            r#"INSERT INTO usage_records (tenant_id, consumer_id, api_key_id, endpoint, method, status_code)
-            VALUES ($1, $2, $3, $4, $5, $6)"#,
-            tenant.id,
+            r#"INSERT INTO usage_records (tenant_id, project_id, consumer_id, api_key_id, endpoint, method, status_code)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+            tenant_id,
+            project_id,
             consumer.id,
             api_key.id,
             "/proxy/test",
@@ -329,7 +306,6 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
         .unwrap();
     }
 
-    // 上限超過で 403
     let response = app
         .oneshot(
             Request::get("/proxy/test")
@@ -342,33 +318,17 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    sqlx::query!("DELETE FROM usage_records WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM api_keys WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM plans WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
+    cleanup(&pool, tenant_id).await;
 }
 
 #[tokio::test]
 async fn proxy_passes_when_under_quota() {
     let (app, pool) = setup().await;
-
-    let tenant = sqlx::query!(
-        r#"INSERT INTO tenants (name) VALUES ($1) RETURNING id"#,
-        "test-tenant-under-quota",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-under-quota").await;
 
     let plan = sqlx::query!(
-        r#"INSERT INTO plans (tenant_id, name, monthly_request_quota) VALUES ($1, $2, $3) RETURNING id"#,
-        tenant.id,
+        r#"INSERT INTO plans (project_id, name, monthly_request_quota) VALUES ($1, $2, $3) RETURNING id"#,
+        project_id,
         "under-quota-plan",
         100i32,
     )
@@ -377,8 +337,9 @@ async fn proxy_passes_when_under_quota() {
     .unwrap();
 
     let consumer = sqlx::query!(
-        r#"INSERT INTO consumers (tenant_id, plan_id) VALUES ($1, $2) RETURNING id"#,
-        tenant.id,
+        r#"INSERT INTO consumers (tenant_id, project_id, plan_id) VALUES ($1, $2, $3) RETURNING id"#,
+        tenant_id,
+        project_id,
         plan.id,
     )
     .fetch_one(&pool)
@@ -390,8 +351,9 @@ async fn proxy_passes_when_under_quota() {
     let key_prefix = &raw_key[..8];
 
     sqlx::query!(
-        r#"INSERT INTO api_keys (tenant_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5)"#,
-        tenant.id,
+        r#"INSERT INTO api_keys (tenant_id, project_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5, $6)"#,
+        tenant_id,
+        project_id,
         consumer.id,
         key_hash,
         key_prefix,
@@ -401,7 +363,6 @@ async fn proxy_passes_when_under_quota() {
     .await
     .unwrap();
 
-    // 上限内 → 200
     let response = app
         .oneshot(
             Request::get("/proxy/test")
@@ -414,14 +375,5 @@ async fn proxy_passes_when_under_quota() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    sqlx::query!("DELETE FROM usage_records WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM api_keys WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM plans WHERE tenant_id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
-    sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant.id)
-        .execute(&pool).await.unwrap();
+    cleanup(&pool, tenant_id).await;
 }

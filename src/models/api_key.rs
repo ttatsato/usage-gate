@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-// DB レコード表現（key_hash は API レスポンスに含めない）
 #[derive(FromRow, Serialize)]
 pub struct ApiKey {
     pub id: Uuid,
     pub tenant_id: Uuid,
+    pub project_id: Uuid,
     pub consumer_id: Uuid,
     pub key_prefix: String,
     pub name: Option<String>,
@@ -27,6 +27,7 @@ pub struct CreateApiKey {
 pub struct CreatedApiKey {
     pub id: Uuid,
     pub tenant_id: Uuid,
+    pub project_id: Uuid,
     pub consumer_id: Uuid,
     pub key: String,
     pub key_prefix: String,
@@ -40,8 +41,8 @@ pub struct CreatedApiKey {
 pub struct AuthedApiKey {
     pub api_key_id: Uuid,
     pub tenant_id: Uuid,
+    pub project_id: Uuid,
     pub consumer_id: Uuid,
-    // プラン未割当の consumer も許容するため Option
     pub plan_id: Option<Uuid>,
     pub plan_name: Option<String>,
     pub monthly_request_quota: Option<i32>,

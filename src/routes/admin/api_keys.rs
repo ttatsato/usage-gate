@@ -2,7 +2,8 @@ use crate::models::api_key::{ApiKey, CreateApiKey, CreatedApiKey};
 use crate::repositories::{api_key_repository, consumer_repository};
 use crate::utils::hash::hash_api_key;
 use axum::{
-    extract::{Json, State},
+    Json,
+    extract::State,
     http::StatusCode,
 };
 use sqlx::PgPool;
@@ -14,18 +15,15 @@ pub async fn create_api_key(
 ) -> Result<(StatusCode, Json<CreatedApiKey>), (StatusCode, Json<serde_json::Value>)> {
     let consumer = consumer_repository::find_by_id(&pool, body.consumer_id)
         .await
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Internal server error"})),
-            )
-        })?
+        .map_err(|_| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        ))?
         .ok_or((
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Consumer not found"})),
         ))?;
 
-    // 平文キーを生成し、ハッシュと prefix を計算
     let raw_key = Uuid::new_v4().to_string().replace("-", "");
     let key_hash = hash_api_key(&raw_key);
     let key_prefix = raw_key.chars().take(8).collect::<String>();
@@ -33,23 +31,22 @@ pub async fn create_api_key(
     let api_key = api_key_repository::create(
         &pool,
         consumer.tenant_id,
+        consumer.project_id,
         consumer.id,
         &key_hash,
         &key_prefix,
         body.name.as_deref(),
     )
     .await
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "Failed to create api key"})),
-        )
-    })?;
+    .map_err(|_| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"error": "Failed to create api key"})),
+    ))?;
 
-    // 発行時のみ平文キーを含めてレスポンス
     let created = CreatedApiKey {
         id: api_key.id,
         tenant_id: api_key.tenant_id,
+        project_id: api_key.project_id,
         consumer_id: api_key.consumer_id,
         key: raw_key,
         key_prefix: api_key.key_prefix,

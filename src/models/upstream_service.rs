@@ -1,21 +1,21 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(sqlx::FromRow, Serialize)]
-pub struct Consumer {
+#[derive(FromRow, Serialize)]
+pub struct UpstreamService {
     pub id: Uuid,
-    pub tenant_id: Uuid,
     pub project_id: Uuid,
-    pub plan_id: Option<Uuid>,
-    pub external_id: Option<String>,
+    pub name: String,
+    pub base_url: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Deserialize)]
-pub struct CreateConsumer {
+pub struct CreateUpstreamService {
     pub project_id: Uuid,
-    pub plan_id: Option<Uuid>,
-    pub external_id: Option<String>,
+    pub name: String,
+    pub base_url: String,
 }

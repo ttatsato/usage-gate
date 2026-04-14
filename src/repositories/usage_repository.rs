@@ -3,10 +3,10 @@ use chrono::{DateTime, Datelike, TimeZone, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-// 使用量を1件記録する
 pub async fn record_usage(
     pool: &PgPool,
     tenant_id: Uuid,
+    project_id: Uuid,
     consumer_id: Uuid,
     api_key_id: Uuid,
     endpoint: &str,
@@ -14,9 +14,10 @@ pub async fn record_usage(
     status_code: i16,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        r#"INSERT INTO usage_records (tenant_id, consumer_id, api_key_id, endpoint, method, status_code)
-        VALUES ($1, $2, $3, $4, $5, $6)"#,
+        r#"INSERT INTO usage_records (tenant_id, project_id, consumer_id, api_key_id, endpoint, method, status_code)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
         tenant_id,
+        project_id,
         consumer_id,
         api_key_id,
         endpoint,
@@ -29,7 +30,6 @@ pub async fn record_usage(
     Ok(())
 }
 
-// テナントの使用量をエンドポイント別に集計する
 pub async fn get_usage_summary(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -53,8 +53,6 @@ pub async fn get_usage_summary(
     .await
 }
 
-// consumer の当月（UTC 月初から現在まで）のリクエスト数を取得する
-// クォータ制御で使用
 pub async fn count_current_month_requests(
     pool: &PgPool,
     consumer_id: Uuid,
@@ -77,7 +75,6 @@ pub async fn count_current_month_requests(
     Ok(row.count)
 }
 
-// テナントの合計リクエスト数を取得する
 pub async fn get_total_requests(
     pool: &PgPool,
     tenant_id: Uuid,
