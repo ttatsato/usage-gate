@@ -9,9 +9,20 @@ pub struct ValkeyQuotaCounter {
 }
 
 impl ValkeyQuotaCounter {
-    pub fn new(url: &str) -> Result<Self, QuotaCounterError> {
+    pub async fn new(url: &str) -> Result<Self, QuotaCounterError> {
         let client =
             redis::Client::open(url).map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
+
+        // 起動時に接続確認
+        let mut conn = client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
+        redis::cmd("PING")
+            .query_async::<String>(&mut conn)
+            .await
+            .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
+
         Ok(Self { client })
     }
 
@@ -42,15 +53,19 @@ impl ValkeyQuotaCounter {
                 let days = days_remaining_in_month(now.year(), now.month());
                 ((days + 1) * 86400) as i64
             }
-            QuotaPeriod::Daily => 2 * 86400,   // 2日
-            QuotaPeriod::Hourly => 2 * 3600,   // 2時間
+            QuotaPeriod::Daily => 2 * 86400, // 2日
+            QuotaPeriod::Hourly => 2 * 3600, // 2時間
         }
     }
 }
 
 #[async_trait]
 impl QuotaCounter for ValkeyQuotaCounter {
-    async fn get_count(&self, consumer_id: Uuid, period: &QuotaPeriod) -> Result<i64, QuotaCounterError> {
+    async fn get_count(
+        &self,
+        consumer_id: Uuid,
+        period: &QuotaPeriod,
+    ) -> Result<i64, QuotaCounterError> {
         let mut conn = self
             .client
             .get_multiplexed_async_connection()
@@ -65,7 +80,11 @@ impl QuotaCounter for ValkeyQuotaCounter {
         Ok(count.unwrap_or(0))
     }
 
-    async fn increment(&self, consumer_id: Uuid, period: &QuotaPeriod) -> Result<(), QuotaCounterError> {
+    async fn increment(
+        &self,
+        consumer_id: Uuid,
+        period: &QuotaPeriod,
+    ) -> Result<(), QuotaCounterError> {
         let mut conn = self
             .client
             .get_multiplexed_async_connection()

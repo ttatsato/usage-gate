@@ -24,7 +24,11 @@ async fn main() {
 
     let url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
     let quota_counter = match std::env::var("QUOTA_COUNTER").as_deref() {
-        Ok("valkey") => Arc::new(ValkeyQuotaCounter::new(&url).expect("Failed to connect to Valkey")),
+        Ok("valkey") => Arc::new(
+            ValkeyQuotaCounter::new(&url)
+                .await
+                .expect("Failed to connect to Valkey"),
+        ),
         // 将来 memcached 等を追加する場合はここに分岐を追加
         _ => {
             panic!("QUOTA_COUNTER must be set (supported: valkey)")

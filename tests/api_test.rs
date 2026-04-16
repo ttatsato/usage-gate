@@ -17,7 +17,9 @@ async fn setup() -> (axum::Router, PgPool, Arc<dyn QuotaCounter>) {
 
     let valkey_url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
     let quota_counter: Arc<dyn QuotaCounter> = Arc::new(
-        ValkeyQuotaCounter::new(&valkey_url).expect("Failed to connect to Valkey"),
+        ValkeyQuotaCounter::new(&valkey_url)
+            .await
+            .expect("Failed to connect to Valkey"),
     );
 
     let app = usage_gate::create_router(pool.clone(), quota_counter.clone());
@@ -330,7 +332,10 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
         .await
         .unwrap();
 
-        counter.increment(consumer.id, &QuotaPeriod::Monthly).await.unwrap();
+        counter
+            .increment(consumer.id, &QuotaPeriod::Monthly)
+            .await
+            .unwrap();
     }
 
     let response = app
