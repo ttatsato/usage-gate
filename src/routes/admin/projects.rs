@@ -1,3 +1,5 @@
+use crate::models::project::{CreateProject, Project};
+use crate::repositories::project_repository;
 use axum::{
     Json,
     extract::{Query, State},
@@ -6,8 +8,6 @@ use axum::{
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::project::{CreateProject, Project};
-use crate::repositories::project_repository;
 
 pub async fn create_project(
     State(pool): State<PgPool>,
@@ -15,10 +15,12 @@ pub async fn create_project(
 ) -> Result<(StatusCode, Json<Project>), (StatusCode, Json<serde_json::Value>)> {
     let project = project_repository::create(&pool, body.tenant_id, &body.name)
         .await
-        .map_err(|_| (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "Failed to create project"})),
-        ))?;
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Failed to create project"})),
+            )
+        })?;
     Ok((StatusCode::CREATED, Json(project)))
 }
 

@@ -1,10 +1,6 @@
 use crate::models::consumer::{Consumer, CreateConsumer};
 use crate::repositories::{consumer_repository, project_repository};
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 use sqlx::PgPool;
 
 pub async fn create_consumer(
@@ -14,10 +10,12 @@ pub async fn create_consumer(
     // project_id から tenant_id を逆引き
     let project = project_repository::find_by_id(&pool, body.project_id)
         .await
-        .map_err(|_| (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "Internal server error"})),
-        ))?
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Internal server error"})),
+            )
+        })?
         .ok_or((
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Project not found"})),
@@ -31,10 +29,12 @@ pub async fn create_consumer(
         body.external_id.as_deref(),
     )
     .await
-    .map_err(|_| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({"error": "Failed to create consumer"})),
-    ))?;
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Failed to create consumer"})),
+        )
+    })?;
 
     Ok((StatusCode::CREATED, Json(consumer)))
 }

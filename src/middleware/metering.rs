@@ -6,10 +6,12 @@ use axum::{
     response::Response,
 };
 use sqlx::PgPool;
+use std::sync::Arc;
+use crate::adapters::quota_counter::QuotaCounter;
 
 // メータリングミドルウェア
 // Auth ミドルウェアの後に動き、リクエスト完了後に使用量を記録する
-pub async fn metering(State(pool): State<PgPool>, request: Request, next: Next) -> Response {
+pub async fn metering(State((pool, counter)): State<(PgPool, Arc<dyn QuotaCounter>)>, request: Request, next: Next) -> Response {
     // リクエストからテナント情報を取得（Auth ミドルウェアが extensions に添付したもの）
     let authed = request.extensions().get::<AuthedApiKey>().cloned();
     // レスポンス後にはリクエスト情報にアクセスできないので、先に取得しておく
@@ -36,6 +38,9 @@ pub async fn metering(State(pool): State<PgPool>, request: Request, next: Next) 
                 status_code,
             )
             .await;
+
+            // カウンターを +1
+            let _ = counter.increment(authed.consumer_id).await;
         });
     }
 

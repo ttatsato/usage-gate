@@ -2,7 +2,9 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use std::sync::Arc;
 use tower::ServiceExt;
+use usage_gate::adapters::quota_counter::database::DatabaseQuotaCounter;
 
 async fn setup() -> (axum::Router, PgPool) {
     dotenvy::dotenv().ok();
@@ -10,7 +12,8 @@ async fn setup() -> (axum::Router, PgPool) {
     let pool = PgPool::connect(&database_url)
         .await
         .expect("Failed to connect");
-    let app = usage_gate::create_router(pool.clone());
+    let quota_counter = Arc::new(DatabaseQuotaCounter::new(pool.clone()));
+    let app = usage_gate::create_router(pool.clone(), quota_counter);
     (app, pool)
 }
 
@@ -41,25 +44,37 @@ async fn create_tenant_and_project(pool: &PgPool, tenant_name: &str) -> (uuid::U
 
 async fn cleanup(pool: &PgPool, tenant_id: uuid::Uuid) {
     sqlx::query!("DELETE FROM usage_records WHERE tenant_id = $1", tenant_id)
-        .execute(pool).await.unwrap();
+        .execute(pool)
+        .await
+        .unwrap();
     sqlx::query!("DELETE FROM api_keys WHERE tenant_id = $1", tenant_id)
-        .execute(pool).await.unwrap();
+        .execute(pool)
+        .await
+        .unwrap();
     sqlx::query!("DELETE FROM consumers WHERE tenant_id = $1", tenant_id)
-        .execute(pool).await.unwrap();
+        .execute(pool)
+        .await
+        .unwrap();
     sqlx::query!(
         "DELETE FROM plans WHERE project_id IN (SELECT id FROM projects WHERE tenant_id = $1)",
         tenant_id,
     )
-    .execute(pool).await.unwrap();
+    .execute(pool)
+    .await
+    .unwrap();
     sqlx::query!(
         "DELETE FROM upstream_services WHERE project_id IN (SELECT id FROM projects WHERE tenant_id = $1)",
         tenant_id,
     )
     .execute(pool).await.unwrap();
     sqlx::query!("DELETE FROM projects WHERE tenant_id = $1", tenant_id)
-        .execute(pool).await.unwrap();
+        .execute(pool)
+        .await
+        .unwrap();
     sqlx::query!("DELETE FROM tenants WHERE id = $1", tenant_id)
-        .execute(pool).await.unwrap();
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 // --- Health ---
@@ -220,7 +235,8 @@ async fn create_consumer_basic() {
 #[tokio::test]
 async fn create_consumer_without_external_id() {
     let (app, pool) = setup().await;
-    let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-consumer-no-ext").await;
+    let (tenant_id, project_id) =
+        create_tenant_and_project(&pool, "test-tenant-consumer-no-ext").await;
 
     let response = app
         .oneshot(

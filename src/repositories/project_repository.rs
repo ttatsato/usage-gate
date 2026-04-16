@@ -1,12 +1,8 @@
+use crate::models::project::Project;
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::project::Project;
 
-pub async fn create(
-    pool: &PgPool,
-    tenant_id: Uuid,
-    name: &str,
-) -> Result<Project, sqlx::Error> {
+pub async fn create(pool: &PgPool, tenant_id: Uuid, name: &str) -> Result<Project, sqlx::Error> {
     sqlx::query_as!(
         Project,
         r#"INSERT INTO projects (tenant_id, name) VALUES ($1, $2)
@@ -31,10 +27,7 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Project>, sqlx
     .await
 }
 
-pub async fn list_by_tenant(
-    pool: &PgPool,
-    tenant_id: Uuid,
-) -> Result<Vec<Project>, sqlx::Error> {
+pub async fn list_by_tenant(pool: &PgPool, tenant_id: Uuid) -> Result<Vec<Project>, sqlx::Error> {
     sqlx::query_as!(
         Project,
         r#"SELECT id, tenant_id, name,

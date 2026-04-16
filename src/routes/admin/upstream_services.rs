@@ -1,3 +1,5 @@
+use crate::models::upstream_service::{CreateUpstreamService, UpstreamService};
+use crate::repositories::upstream_service_repository;
 use axum::{
     Json,
     extract::{Query, State},
@@ -6,8 +8,6 @@ use axum::{
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::upstream_service::{CreateUpstreamService, UpstreamService};
-use crate::repositories::upstream_service_repository;
 
 pub async fn create_upstream_service(
     State(pool): State<PgPool>,
@@ -21,12 +21,15 @@ pub async fn create_upstream_service(
         ));
     }
 
-    let service = upstream_service_repository::create(&pool, body.project_id, &body.name, &body.base_url)
-        .await
-        .map_err(|_| (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "Failed to create upstream service"})),
-        ))?;
+    let service =
+        upstream_service_repository::create(&pool, body.project_id, &body.name, &body.base_url)
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "Failed to create upstream service"})),
+                )
+            })?;
     Ok((StatusCode::CREATED, Json(service)))
 }
 
