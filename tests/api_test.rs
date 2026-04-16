@@ -4,17 +4,27 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower::ServiceExt;
+use usage_gate::adapters::quota_counter::QuotaCounter;
 use usage_gate::adapters::quota_counter::database::DatabaseQuotaCounter;
+use usage_gate::adapters::quota_counter::valkey::ValkeyQuotaCounter;
 
-async fn setup() -> (axum::Router, PgPool) {
+async fn setup() -> (axum::Router, PgPool, Arc<dyn QuotaCounter>) {
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
     let pool = PgPool::connect(&database_url)
         .await
         .expect("Failed to connect");
-    let quota_counter = Arc::new(DatabaseQuotaCounter::new(pool.clone()));
-    let app = usage_gate::create_router(pool.clone(), quota_counter);
-    (app, pool)
+
+    let quota_counter: Arc<dyn QuotaCounter> = match std::env::var("QUOTA_COUNTER").as_deref() {
+        Ok("valkey") => {
+            let url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
+            Arc::new(ValkeyQuotaCounter::new(&url).expect("Failed to connect to Valkey"))
+        }
+        _ => Arc::new(DatabaseQuotaCounter::new(pool.clone())),
+    };
+
+    let app = usage_gate::create_router(pool.clone(), quota_counter.clone());
+    (app, pool, quota_counter)
 }
 
 async fn to_json(response: axum::response::Response) -> Value {
@@ -43,6 +53,8 @@ async fn create_tenant_and_project(pool: &PgPool, tenant_name: &str) -> (uuid::U
 }
 
 async fn cleanup(pool: &PgPool, tenant_id: uuid::Uuid) {
+    // metering の tokio::spawn による非同期 INSERT を待つ
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     sqlx::query!("DELETE FROM usage_records WHERE tenant_id = $1", tenant_id)
         .execute(pool)
         .await
@@ -81,7 +93,7 @@ async fn cleanup(pool: &PgPool, tenant_id: uuid::Uuid) {
 
 #[tokio::test]
 async fn health_returns_ok() {
-    let (app, _pool) = setup().await;
+    let (app, _pool, _counter) = setup().await;
 
     let response = app
         .oneshot(
@@ -99,7 +111,7 @@ async fn health_returns_ok() {
 
 #[tokio::test]
 async fn create_tenant_returns_tenant() {
-    let (app, _pool) = setup().await;
+    let (app, _pool, _counter) = setup().await;
 
     let response = app
         .oneshot(
@@ -122,7 +134,7 @@ async fn create_tenant_returns_tenant() {
 
 #[tokio::test]
 async fn proxy_without_api_key_returns_401() {
-    let (app, _pool) = setup().await;
+    let (app, _pool, _counter) = setup().await;
 
     let response = app
         .oneshot(
@@ -138,7 +150,7 @@ async fn proxy_without_api_key_returns_401() {
 
 #[tokio::test]
 async fn proxy_with_invalid_api_key_returns_401() {
-    let (app, _pool) = setup().await;
+    let (app, _pool, _counter) = setup().await;
 
     let response = app
         .oneshot(
@@ -155,7 +167,7 @@ async fn proxy_with_invalid_api_key_returns_401() {
 
 #[tokio::test]
 async fn proxy_with_valid_api_key_returns_200() {
-    let (app, pool) = setup().await;
+    let (app, pool, _counter) = setup().await;
 
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-auth").await;
 
@@ -204,7 +216,7 @@ async fn proxy_with_valid_api_key_returns_200() {
 
 #[tokio::test]
 async fn create_consumer_basic() {
-    let (app, pool) = setup().await;
+    let (app, pool, _counter) = setup().await;
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-consumer").await;
 
     let response = app
@@ -234,7 +246,7 @@ async fn create_consumer_basic() {
 
 #[tokio::test]
 async fn create_consumer_without_external_id() {
-    let (app, pool) = setup().await;
+    let (app, pool, _counter) = setup().await;
     let (tenant_id, project_id) =
         create_tenant_and_project(&pool, "test-tenant-consumer-no-ext").await;
 
@@ -264,7 +276,7 @@ async fn create_consumer_without_external_id() {
 
 #[tokio::test]
 async fn proxy_returns_403_when_monthly_quota_exceeded() {
-    let (app, pool) = setup().await;
+    let (app, pool, counter) = setup().await;
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-quota").await;
 
     let plan = sqlx::query!(
@@ -304,7 +316,7 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
     .await
     .unwrap();
 
-    // 上限分の使用量を直接 INSERT
+    // 上限分の使用量を直接 INSERT + カウンターも increment
     for _ in 0..2 {
         sqlx::query!(
             r#"INSERT INTO usage_records (tenant_id, project_id, consumer_id, api_key_id, endpoint, method, status_code)
@@ -320,6 +332,8 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
         .execute(&pool)
         .await
         .unwrap();
+
+        counter.increment(consumer.id).await.unwrap();
     }
 
     let response = app
@@ -339,7 +353,7 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
 
 #[tokio::test]
 async fn proxy_passes_when_under_quota() {
-    let (app, pool) = setup().await;
+    let (app, pool, _counter) = setup().await;
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-under-quota").await;
 
     let plan = sqlx::query!(
