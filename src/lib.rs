@@ -24,7 +24,7 @@ use routes::admin::upstream_services::{create_upstream_service, list_upstream_se
 use routes::admin::usage::get_usage;
 use routes::health::health;
 use routes::proxy::proxy;
-use routes::system::quota_sync::{sync_to_db, sync_from_db};
+use routes::system::quota_sync::sync_to_db;
 use std::sync::Arc;
 
 pub fn create_router(pool: PgPool, quota_counter: Arc<dyn QuotaCounter>) -> Router {
@@ -48,7 +48,6 @@ pub fn create_router(pool: PgPool, quota_counter: Arc<dyn QuotaCounter>) -> Rout
 
     let system_routes = Router::new()
         .route("/system/quota/sync-to-db", post(sync_to_db))
-        .route("/system/quota/sync-from-db", post(sync_from_db))
         .with_state((pool.clone(), quota_counter.clone()));
 
     let public_routes = Router::new()

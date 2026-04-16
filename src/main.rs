@@ -9,14 +9,11 @@ async fn main() {
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
     let pool = PgPoolOptions::new()
-        // NOTE: プール数目安 = CPU コア数 × 2 + 1
         .max_connections(5)
         .connect(&database_url)
         .await
         .expect("Failed to connect to database");
 
-    // with_env_filterは出力するログステータスを制御
-    // NOTE: RUST_LOGという環境変数で設定可能
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
@@ -30,11 +27,28 @@ async fn main() {
                 .await
                 .expect("Failed to connect to Valkey"),
         ),
-        // 将来 memcached 等を追加する場合はここに分岐を追加
         _ => {
             panic!("QUOTA_COUNTER must be set (supported: valkey)")
         }
     };
+
+    let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(|s| s.as_str()) {
+        Some("sync-to-db") => {
+            tracing::info!("Starting Valkey → DB sync");
+            match do_sync_to_db(&pool, &*quota_counter).await {
+                Ok(count) => tracing::info!("Synced {} consumers from Valkey to DB", count),
+                Err(e) => tracing::error!("Sync failed: {}", e),
+            }
+            return;
+        }
+        Some(cmd) => {
+            eprintln!("Unknown command: {}", cmd);
+            eprintln!("Usage: usage-gate [sync-to-db]");
+            std::process::exit(1);
+        }
+        None => {}
+    }
 
     // 定期バッチ: 1時間ごとに Valkey → DB 同期
     {
