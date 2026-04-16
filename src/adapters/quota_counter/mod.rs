@@ -1,4 +1,5 @@
 pub mod database;
+pub mod valkey;
 
 use async_trait::async_trait;
 use uuid::Uuid;

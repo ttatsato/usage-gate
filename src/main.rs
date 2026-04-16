@@ -1,6 +1,8 @@
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
+use usage_gate::adapters::quota_counter::QuotaCounter;
 use usage_gate::adapters::quota_counter::database::DatabaseQuotaCounter;
+use usage_gate::adapters::quota_counter::valkey::ValkeyQuotaCounter;
 use usage_gate::create_router;
 
 #[tokio::main]
@@ -23,7 +25,13 @@ async fn main() {
         .init();
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
-    let quota_counter = Arc::new(DatabaseQuotaCounter::new(pool.clone()));
+    let quota_counter: Arc<dyn QuotaCounter> = match std::env::var("QUOTA_COUNTER").as_deref() {
+        Ok("valkey") => {
+            let url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
+            Arc::new(ValkeyQuotaCounter::new(&url).expect("Failed to connect to Valkey"))
+        }
+        _ => Arc::new(DatabaseQuotaCounter::new(pool.clone())),
+    };
     let app = create_router(pool, quota_counter);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port)
