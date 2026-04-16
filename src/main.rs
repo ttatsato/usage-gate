@@ -2,6 +2,7 @@ use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use usage_gate::adapters::quota_counter::valkey::ValkeyQuotaCounter;
 use usage_gate::create_router;
+use usage_gate::routes::system::quota_sync::do_sync_to_db;
 
 #[tokio::main]
 async fn main() {
@@ -34,6 +35,23 @@ async fn main() {
             panic!("QUOTA_COUNTER must be set (supported: valkey)")
         }
     };
+
+    // 定期バッチ: 1時間ごとに Valkey → DB 同期
+    {
+        let pool = pool.clone();
+        let counter = quota_counter.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                tracing::info!("Starting periodic quota sync to DB");
+                match do_sync_to_db(&pool, &*counter).await {
+                    Ok(count) => tracing::info!("Quota sync completed: {} consumers synced", count),
+                    Err(e) => tracing::error!("Quota sync failed: {}", e),
+                }
+            }
+        });
+    }
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
     let app = create_router(pool, quota_counter);

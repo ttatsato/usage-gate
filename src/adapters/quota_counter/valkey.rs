@@ -109,6 +109,33 @@ impl QuotaCounter for ValkeyQuotaCounter {
 
         Ok(())
     }
+
+    async fn restore(
+        &self,
+        consumer_id: Uuid,
+        period: &QuotaPeriod,
+        count: i64,
+    ) -> Result<(), QuotaCounterError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
+
+        let key = self.key(consumer_id, period);
+        let ttl = self.ttl_seconds(period);
+
+        let _: () = conn
+            .set(&key, count)
+            .await
+            .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
+        let _: () = conn
+            .expire(&key, ttl)
+            .await
+            .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
 }
 
 fn days_remaining_in_month(year: i32, month: u32) -> u32 {

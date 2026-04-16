@@ -24,6 +24,7 @@ use routes::admin::upstream_services::{create_upstream_service, list_upstream_se
 use routes::admin::usage::get_usage;
 use routes::health::health;
 use routes::proxy::proxy;
+use routes::system::quota_sync::{sync_to_db, sync_from_db};
 use std::sync::Arc;
 
 pub fn create_router(pool: PgPool, quota_counter: Arc<dyn QuotaCounter>) -> Router {
@@ -45,6 +46,11 @@ pub fn create_router(pool: PgPool, quota_counter: Arc<dyn QuotaCounter>) -> Rout
         ))
         .route_layer(axum_middleware::from_fn_with_state(pool.clone(), auth));
 
+    let system_routes = Router::new()
+        .route("/system/quota/sync-to-db", post(sync_to_db))
+        .route("/system/quota/sync-from-db", post(sync_from_db))
+        .with_state((pool.clone(), quota_counter.clone()));
+
     let public_routes = Router::new()
         .route("/health", get(health))
         .route("/admin/tenants", post(create_tenant).get(list_tenants))
@@ -58,5 +64,8 @@ pub fn create_router(pool: PgPool, quota_counter: Arc<dyn QuotaCounter>) -> Rout
         )
         .route("/admin/usage", get(get_usage));
 
-    public_routes.merge(protected_routes).with_state(pool)
+    public_routes
+        .merge(protected_routes)
+        .merge(system_routes)
+        .with_state(pool)
 }
