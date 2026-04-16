@@ -4,26 +4,25 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower::ServiceExt;
-use usage_gate::adapters::quota_counter::QuotaCounter;
-use usage_gate::adapters::quota_counter::QuotaPeriod;
-use usage_gate::adapters::quota_counter::valkey::ValkeyQuotaCounter;
+use usage_gate::adapters::rate_limiter::{RateLimit, RateLimitPeriod, RateLimiter};
+use usage_gate::adapters::rate_limiter::valkey::ValkeyRateLimiter;
 
-async fn setup() -> (axum::Router, PgPool, Arc<dyn QuotaCounter>) {
+async fn setup() -> (axum::Router, PgPool, Arc<dyn RateLimiter>) {
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
     let pool = PgPool::connect(&database_url)
         .await
         .expect("Failed to connect");
 
-    let valkey_url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
-    let quota_counter: Arc<dyn QuotaCounter> = Arc::new(
-        ValkeyQuotaCounter::new(&valkey_url)
+    let valkey_url = std::env::var("RATE_LIMITER_URL").expect("RATE_LIMITER_URL not set");
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(
+        ValkeyRateLimiter::new(&valkey_url)
             .await
             .expect("Failed to connect to Valkey"),
     );
 
-    let app = usage_gate::create_router(pool.clone(), quota_counter.clone());
-    (app, pool, quota_counter)
+    let app = usage_gate::create_router(pool.clone(), rate_limiter.clone());
+    (app, pool, rate_limiter)
 }
 
 async fn to_json(response: axum::response::Response) -> Value {
@@ -92,7 +91,7 @@ async fn cleanup(pool: &PgPool, tenant_id: uuid::Uuid) {
 
 #[tokio::test]
 async fn health_returns_ok() {
-    let (app, _pool, _counter) = setup().await;
+    let (app, _pool, _limiter) = setup().await;
 
     let response = app
         .oneshot(
@@ -110,7 +109,7 @@ async fn health_returns_ok() {
 
 #[tokio::test]
 async fn create_tenant_returns_tenant() {
-    let (app, _pool, _counter) = setup().await;
+    let (app, _pool, _limiter) = setup().await;
 
     let response = app
         .oneshot(
@@ -133,7 +132,7 @@ async fn create_tenant_returns_tenant() {
 
 #[tokio::test]
 async fn proxy_without_api_key_returns_401() {
-    let (app, _pool, _counter) = setup().await;
+    let (app, _pool, _limiter) = setup().await;
 
     let response = app
         .oneshot(
@@ -149,7 +148,7 @@ async fn proxy_without_api_key_returns_401() {
 
 #[tokio::test]
 async fn proxy_with_invalid_api_key_returns_401() {
-    let (app, _pool, _counter) = setup().await;
+    let (app, _pool, _limiter) = setup().await;
 
     let response = app
         .oneshot(
@@ -166,7 +165,7 @@ async fn proxy_with_invalid_api_key_returns_401() {
 
 #[tokio::test]
 async fn proxy_with_valid_api_key_returns_200() {
-    let (app, pool, _counter) = setup().await;
+    let (app, pool, _limiter) = setup().await;
 
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-auth").await;
 
@@ -215,7 +214,7 @@ async fn proxy_with_valid_api_key_returns_200() {
 
 #[tokio::test]
 async fn create_consumer_basic() {
-    let (app, pool, _counter) = setup().await;
+    let (app, pool, _limiter) = setup().await;
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-consumer").await;
 
     let response = app
@@ -245,7 +244,7 @@ async fn create_consumer_basic() {
 
 #[tokio::test]
 async fn create_consumer_without_external_id() {
-    let (app, pool, _counter) = setup().await;
+    let (app, pool, _limiter) = setup().await;
     let (tenant_id, project_id) =
         create_tenant_and_project(&pool, "test-tenant-consumer-no-ext").await;
 
@@ -271,11 +270,11 @@ async fn create_consumer_without_external_id() {
     cleanup(&pool, tenant_id).await;
 }
 
-// --- Quota Middleware ---
+// --- Rate Limiting ---
 
 #[tokio::test]
-async fn proxy_returns_403_when_monthly_quota_exceeded() {
-    let (app, pool, counter) = setup().await;
+async fn proxy_returns_429_when_monthly_quota_exceeded() {
+    let (app, pool, limiter) = setup().await;
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-quota").await;
 
     let plan = sqlx::query!(
@@ -302,8 +301,8 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
     let key_hash = usage_gate::utils::hash::hash_api_key(raw_key);
     let key_prefix = &raw_key[..8];
 
-    let api_key = sqlx::query!(
-        r#"INSERT INTO api_keys (tenant_id, project_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"#,
+    sqlx::query!(
+        r#"INSERT INTO api_keys (tenant_id, project_id, consumer_id, key_hash, key_prefix, name) VALUES ($1, $2, $3, $4, $5, $6)"#,
         tenant_id,
         project_id,
         consumer.id,
@@ -311,31 +310,17 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
         key_prefix,
         "quota-test",
     )
-    .fetch_one(&pool)
+    .execute(&pool)
     .await
     .unwrap();
 
-    // 上限分の使用量を直接 INSERT + カウンターも increment
+    // Token Bucket からトークンを使い切る（quota=2 なので2回消費）
+    let limits = vec![RateLimit {
+        period: RateLimitPeriod::Monthly,
+        max_requests: 2,
+    }];
     for _ in 0..2 {
-        sqlx::query!(
-            r#"INSERT INTO usage_records (tenant_id, project_id, consumer_id, api_key_id, endpoint, method, status_code)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
-            tenant_id,
-            project_id,
-            consumer.id,
-            api_key.id,
-            "/proxy/test",
-            "GET",
-            200i16,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        counter
-            .increment(consumer.id, &QuotaPeriod::Monthly)
-            .await
-            .unwrap();
+        limiter.try_acquire(consumer.id, &limits).await.unwrap();
     }
 
     let response = app
@@ -348,14 +333,14 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
 
     cleanup(&pool, tenant_id).await;
 }
 
 #[tokio::test]
 async fn proxy_passes_when_under_quota() {
-    let (app, pool, _counter) = setup().await;
+    let (app, pool, _limiter) = setup().await;
     let (tenant_id, project_id) = create_tenant_and_project(&pool, "test-tenant-under-quota").await;
 
     let plan = sqlx::query!(

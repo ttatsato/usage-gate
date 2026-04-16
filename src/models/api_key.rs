@@ -46,4 +46,7 @@ pub struct AuthedApiKey {
     pub plan_id: Option<Uuid>,
     pub plan_name: Option<String>,
     pub monthly_request_quota: Option<i32>,
+    pub daily_request_quota: Option<i32>,
+    pub hourly_request_quota: Option<i32>,
+    pub per_second_request_limit: Option<i32>,
 }

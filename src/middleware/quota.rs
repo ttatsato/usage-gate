@@ -1,4 +1,4 @@
-use crate::adapters::quota_counter::{QuotaCounter, QuotaPeriod};
+use crate::adapters::rate_limiter::{RateLimit, RateLimitPeriod, RateLimiter};
 use crate::models::api_key::AuthedApiKey;
 use axum::{
     Json,
@@ -11,15 +11,30 @@ use serde_json::json;
 use std::sync::Arc;
 
 pub async fn quota(
-    State(counter): State<Arc<dyn QuotaCounter>>,
+    State(limiter): State<Arc<dyn RateLimiter>>,
     request: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     let authed = request.extensions().get::<AuthedApiKey>().cloned();
     if let Some(authed) = authed {
-        if let Some(quota) = authed.monthly_request_quota {
-            let current = counter
-                .get_count(authed.consumer_id, &QuotaPeriod::Monthly)
+        // プランに設定された制限を収集
+        let mut limits = Vec::new();
+        if let Some(v) = authed.monthly_request_quota {
+            limits.push(RateLimit { period: RateLimitPeriod::Monthly, max_requests: v as i64 });
+        }
+        if let Some(v) = authed.daily_request_quota {
+            limits.push(RateLimit { period: RateLimitPeriod::Daily, max_requests: v as i64 });
+        }
+        if let Some(v) = authed.hourly_request_quota {
+            limits.push(RateLimit { period: RateLimitPeriod::Hourly, max_requests: v as i64 });
+        }
+        if let Some(v) = authed.per_second_request_limit {
+            limits.push(RateLimit { period: RateLimitPeriod::PerSecond, max_requests: v as i64 });
+        }
+
+        if !limits.is_empty() {
+            let allowed = limiter
+                .try_acquire(authed.consumer_id, &limits)
                 .await
                 .map_err(|_| {
                     (
@@ -28,10 +43,10 @@ pub async fn quota(
                     )
                 })?;
 
-            if current >= quota as i64 {
+            if !allowed {
                 return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(json!({"error": "Monthly quota exceeded"})),
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({"error": "Rate limit exceeded"})),
                 ));
             }
         }

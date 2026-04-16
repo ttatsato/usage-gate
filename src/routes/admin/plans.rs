@@ -18,6 +18,9 @@ pub async fn create_plan(
         body.project_id,
         &body.name,
         body.monthly_request_quota,
+        body.daily_request_quota,
+        body.hourly_request_quota,
+        body.per_second_request_limit,
     )
     .await
     .map_err(|_| {
