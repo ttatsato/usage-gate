@@ -11,9 +11,7 @@ UsageGate is a lightweight developer-focused API gateway that provides:
 
 Designed as a foundation for usage-based billing systems and AI-ready APIs.
 
-⸻
-
-🚀 Overview
+# 🚀 Overview
 
 Modern SaaS and AI APIs require:
 	•	Secure API exposure
@@ -30,7 +28,7 @@ UsageGate aims to solve this by providing a simple, extensible, and high-perform
 
 ⸻
 
-🧩 Core Features
+# 🧩 Core Features
 
 1. API Key Authentication
 	•	Header-based API key validation
@@ -71,11 +69,11 @@ UsageGate aims to solve this by providing a simple, extensible, and high-perform
 	•	Auth middleware
 	•	Tenant resolution middleware
 	•	Metering middleware
-	•	Rate limiting middleware
+	•	Rate-limiting middleware
 
 ⸻
 
-🏗 Architecture (Phase 1)
+# 🏗 Architecture (Phase 1)
 
 Single-node architecture (monolith for simplicity and performance):
 
@@ -92,7 +90,7 @@ Axum (Rust)
 
 ⸻
 
-⚙️ Tech Stack
+# ⚙️ Tech Stack
 	•	Language: Rust
 	•	Framework: Axum
 	•	Async runtime: Tokio
@@ -102,7 +100,7 @@ Axum (Rust)
 
 ⸻
 
-📦 API Design (MVP)
+# 📦 API Design (MVP)
 
 Authentication
 
@@ -144,7 +142,7 @@ GET /admin/usage
 
 ⸻
 
-🧪 Testing Strategy
+# 🧪 Testing Strategy
 	•	Integration tests (API behavior)
 	•	Concurrency tests (rate limit & metering)
 	•	Tenant isolation tests
@@ -152,7 +150,7 @@ GET /admin/usage
 
 ⸻
 
-📊 Observability (Planned)
+# 📊 Observability (Planned)
 	•	Structured logging
 	•	Request ID tracking
 	•	Metrics (p95 / p99 latency)
@@ -160,7 +158,7 @@ GET /admin/usage
 
 ⸻
 
-🧠 Why Rust?
+# 🧠 Why Rust?
 
 UsageGate is not just an API service.
 It is a high-throughput, correctness-critical gateway layer.
@@ -169,7 +167,7 @@ Rust is chosen for the following reasons:
 
 ⸻
 
-1. Safe Concurrency
+## 1. Safe Concurrency
 
 UsageGate handles:
 	•	Concurrent requests
@@ -183,7 +181,7 @@ Rust’s ownership model prevents:
 
 ⸻
 
-2. High Performance
+## 2. High Performance
 
 Gateway layers require:
 	•	Low latency
@@ -197,7 +195,7 @@ Rust provides:
 
 ⸻
 
-3. Strong Type Safety
+## 3. Strong Type Safety
 
 Critical domain concepts:
 	•	TenantId
@@ -210,7 +208,7 @@ are enforced at compile time, reducing runtime errors.
 
 ⸻
 
-4. Explicit Error Handling
+## 4. Explicit Error Handling
 
 UsageGate must handle failures such as:
 	•	Invalid API keys
@@ -222,7 +220,7 @@ Rust’s Result type ensures all failure paths are explicitly handled.
 
 ⸻
 
-5. Reliable Middleware Layer
+## 5. Reliable Middleware Layer
 
 All requests pass through:
 	•	Authentication
@@ -233,9 +231,9 @@ Rust enables writing robust and predictable middleware pipelines.
 
 ⸻
 
-🔮 Roadmap
+# 🔮 Roadmap
 
-Phase 1 (MVP)
+## Phase 1 (MVP)
 	•	API key auth
 	•	Usage tracking
 	•	Rate limiting
@@ -243,28 +241,28 @@ Phase 1 (MVP)
 
 ⸻
 
-Phase 2
+## Phase 2
 	•	Plan management
 	•	Webhook events
 	•	Observability improvements
 
 ⸻
 
-Phase 3
+## Phase 3
 	•	Stripe integration
 	•	Usage-based billing
 	•	Subscription management
 
 ⸻
 
-Phase 4
+## Phase 4
 	•	Model Context Protocol support
 	•	AI agent integration
 	•	Tool-level metering
 
 ⸻
 
-💡 Use Cases
+# 💡 Use Cases
 	•	SaaS APIs with usage-based billing
 	•	AI APIs (LLM / tool APIs)
 	•	Internal API governance
@@ -272,7 +270,7 @@ Phase 4
 
 ⸻
 
-🧭 Positioning
+# 🧭 Positioning
 
 UsageGate is:
 	•	Not a full infrastructure gateway like enterprise solutions
@@ -284,13 +282,13 @@ It is:
 
 ⸻
 
-📌 Status
+# 📌 Status
 
 🚧 Work in progress (Phase 1)
 
 ⸻
 
-🧾 License
+# 🧾 License
 
 TBD
 
