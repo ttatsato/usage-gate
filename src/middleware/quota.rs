@@ -1,4 +1,4 @@
-use crate::adapters::quota_counter::QuotaCounter;
+use crate::adapters::quota_counter::{QuotaCounter, QuotaPeriod};
 use crate::models::api_key::AuthedApiKey;
 use axum::{
     Json,
@@ -17,12 +17,9 @@ pub async fn quota(
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     let authed = request.extensions().get::<AuthedApiKey>().cloned();
     if let Some(authed) = authed {
-        // NOTE: 課金の期間やトークンなのか回数なのかで分岐が増えていく。
-        // 全てのカラムがnullの時はチェックは通らない
         if let Some(quota) = authed.monthly_request_quota {
-            // NOTE: 月間使用量
             let current = counter
-                .get_count(authed.consumer_id)
+                .get_count(authed.consumer_id, &QuotaPeriod::Monthly)
                 .await
                 .map_err(|_| {
                     (

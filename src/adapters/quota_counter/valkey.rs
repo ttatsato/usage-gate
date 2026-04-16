@@ -1,4 +1,4 @@
-use super::{QuotaCounter, QuotaCounterError};
+use super::{QuotaCounter, QuotaCounterError, QuotaPeriod};
 use async_trait::async_trait;
 use chrono::{Datelike, Utc};
 use redis::AsyncCommands;
@@ -15,16 +15,42 @@ impl ValkeyQuotaCounter {
         Ok(Self { client })
     }
 
-    /// consumer_id + 年月 でキーを作る（月が変わると自動リセット）
-    fn key(&self, consumer_id: Uuid) -> String {
+    /// consumer_id + period でキーを作る
+    /// 例: quota:550e8400-...:2026-04-monthly
+    ///     quota:550e8400-...:2026-04-16-daily
+    ///     quota:550e8400-...:2026-04-16T14-hourly
+    fn key(&self, consumer_id: Uuid, period: &QuotaPeriod) -> String {
         let now = Utc::now();
-        format!("quota:{}:{}", consumer_id, now.format("%Y-%m"))
+        match period {
+            QuotaPeriod::Monthly => {
+                format!("quota:{}:{}-monthly", consumer_id, now.format("%Y-%m"))
+            }
+            QuotaPeriod::Daily => {
+                format!("quota:{}:{}-daily", consumer_id, now.format("%Y-%m-%d"))
+            }
+            QuotaPeriod::Hourly => {
+                format!("quota:{}:{}-hourly", consumer_id, now.format("%Y-%m-%dT%H"))
+            }
+        }
+    }
+
+    /// period に応じた TTL（秒）を返す。余裕を持たせて +1 単位分
+    fn ttl_seconds(&self, period: &QuotaPeriod) -> i64 {
+        let now = Utc::now();
+        match period {
+            QuotaPeriod::Monthly => {
+                let days = days_remaining_in_month(now.year(), now.month());
+                ((days + 1) * 86400) as i64
+            }
+            QuotaPeriod::Daily => 2 * 86400,   // 2日
+            QuotaPeriod::Hourly => 2 * 3600,   // 2時間
+        }
     }
 }
 
 #[async_trait]
 impl QuotaCounter for ValkeyQuotaCounter {
-    async fn get_count(&self, consumer_id: Uuid) -> Result<i64, QuotaCounterError> {
+    async fn get_count(&self, consumer_id: Uuid, period: &QuotaPeriod) -> Result<i64, QuotaCounterError> {
         let mut conn = self
             .client
             .get_multiplexed_async_connection()
@@ -32,21 +58,21 @@ impl QuotaCounter for ValkeyQuotaCounter {
             .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
 
         let count: Option<i64> = conn
-            .get(self.key(consumer_id))
+            .get(self.key(consumer_id, period))
             .await
             .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
 
         Ok(count.unwrap_or(0))
     }
 
-    async fn increment(&self, consumer_id: Uuid) -> Result<(), QuotaCounterError> {
+    async fn increment(&self, consumer_id: Uuid, period: &QuotaPeriod) -> Result<(), QuotaCounterError> {
         let mut conn = self
             .client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
 
-        let key = self.key(consumer_id);
+        let key = self.key(consumer_id, period);
 
         // INCR + 初回のみ TTL 設定
         let count: i64 = conn
@@ -55,12 +81,9 @@ impl QuotaCounter for ValkeyQuotaCounter {
             .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
 
         if count == 1 {
-            // 新しいキー → 月末まで + 1日の TTL を設定
-            let now = Utc::now();
-            let days = days_remaining_in_month(now.year(), now.month());
-            let ttl_seconds = (days + 1) * 86400;
+            let ttl = self.ttl_seconds(period);
             let _: () = conn
-                .expire(&key, ttl_seconds as i64)
+                .expire(&key, ttl)
                 .await
                 .map_err(|e| QuotaCounterError::Internal(e.to_string()))?;
         }

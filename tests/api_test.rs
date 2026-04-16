@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use tower::ServiceExt;
 use usage_gate::adapters::quota_counter::QuotaCounter;
-use usage_gate::adapters::quota_counter::database::DatabaseQuotaCounter;
+use usage_gate::adapters::quota_counter::QuotaPeriod;
 use usage_gate::adapters::quota_counter::valkey::ValkeyQuotaCounter;
 
 async fn setup() -> (axum::Router, PgPool, Arc<dyn QuotaCounter>) {
@@ -15,13 +15,10 @@ async fn setup() -> (axum::Router, PgPool, Arc<dyn QuotaCounter>) {
         .await
         .expect("Failed to connect");
 
-    let quota_counter: Arc<dyn QuotaCounter> = match std::env::var("QUOTA_COUNTER").as_deref() {
-        Ok("valkey") => {
-            let url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
-            Arc::new(ValkeyQuotaCounter::new(&url).expect("Failed to connect to Valkey"))
-        }
-        _ => Arc::new(DatabaseQuotaCounter::new(pool.clone())),
-    };
+    let valkey_url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
+    let quota_counter: Arc<dyn QuotaCounter> = Arc::new(
+        ValkeyQuotaCounter::new(&valkey_url).expect("Failed to connect to Valkey"),
+    );
 
     let app = usage_gate::create_router(pool.clone(), quota_counter.clone());
     (app, pool, quota_counter)
@@ -333,7 +330,7 @@ async fn proxy_returns_403_when_monthly_quota_exceeded() {
         .await
         .unwrap();
 
-        counter.increment(consumer.id).await.unwrap();
+        counter.increment(consumer.id, &QuotaPeriod::Monthly).await.unwrap();
     }
 
     let response = app
