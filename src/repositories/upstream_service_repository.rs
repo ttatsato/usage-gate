@@ -1,6 +1,6 @@
+use crate::models::upstream_service::UpstreamService;
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::upstream_service::UpstreamService;
 
 pub async fn create(
     pool: &PgPool,

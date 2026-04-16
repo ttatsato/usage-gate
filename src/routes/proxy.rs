@@ -1,3 +1,5 @@
+use crate::models::api_key::AuthedApiKey;
+use crate::repositories::upstream_service_repository;
 use axum::{
     Extension, Json,
     body::Body,
@@ -7,8 +9,6 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use sqlx::PgPool;
-use crate::models::api_key::AuthedApiKey;
-use crate::repositories::upstream_service_repository;
 
 // プロキシハンドラ
 // /proxy/{name}/{*rest_path} のリクエストを upstream_services の base_url に転送する
@@ -19,18 +19,19 @@ pub async fn proxy(
     request: Request,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     // project 配下の upstream service を解決
-    let upstream = upstream_service_repository::find_by_project_and_name(
-        &pool, authed.project_id, &name,
-    )
-    .await
-    .map_err(|_| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({"error": "Internal server error"})),
-    ))?
-    .ok_or((
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({"error": "Upstream service not found"})),
-    ))?;
+    let upstream =
+        upstream_service_repository::find_by_project_and_name(&pool, authed.project_id, &name)
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "Internal server error"})),
+                )
+            })?
+            .ok_or((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "Upstream service not found"})),
+            ))?;
 
     // 転送先 URL を組み立て
     let base = upstream.base_url.trim_end_matches('/');
@@ -39,7 +40,11 @@ pub async fn proxy(
     } else {
         format!("/{}", rest_path.trim_start_matches('/'))
     };
-    let query = request.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
+    let query = request
+        .uri()
+        .query()
+        .map(|q| format!("?{}", q))
+        .unwrap_or_default();
     let target_url = format!("{}{}{}", base, path, query);
 
     // メソッド・ヘッダー・ボディを取り出す
@@ -49,10 +54,12 @@ pub async fn proxy(
         .into_body()
         .collect()
         .await
-        .map_err(|_| (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": "Failed to read request body"})),
-        ))?
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Failed to read request body"})),
+            )
+        })?
         .to_bytes();
 
     // reqwest で転送
@@ -70,10 +77,12 @@ pub async fn proxy(
         req = req.header(k.as_str(), v);
     }
 
-    let upstream_resp = req.send().await.map_err(|_| (
-        StatusCode::BAD_GATEWAY,
-        Json(serde_json::json!({"error": "Upstream request failed"})),
-    ))?;
+    let upstream_resp = req.send().await.map_err(|_| {
+        (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({"error": "Upstream request failed"})),
+        )
+    })?;
 
     // レスポンスを Axum の Response に変換
     let status = StatusCode::from_u16(upstream_resp.status().as_u16())
@@ -87,10 +96,12 @@ pub async fn proxy(
             resp_headers.insert(name, val);
         }
     }
-    let body = upstream_resp.bytes().await.map_err(|_| (
-        StatusCode::BAD_GATEWAY,
-        Json(serde_json::json!({"error": "Failed to read upstream response"})),
-    ))?;
+    let body = upstream_resp.bytes().await.map_err(|_| {
+        (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({"error": "Failed to read upstream response"})),
+        )
+    })?;
 
     let mut response = Response::new(Body::from(body));
     *response.status_mut() = status;

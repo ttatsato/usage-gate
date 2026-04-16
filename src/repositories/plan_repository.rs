@@ -1,6 +1,6 @@
+use crate::models::plan::Plan;
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::plan::Plan;
 
 pub async fn create(
     pool: &PgPool,
@@ -21,10 +21,7 @@ pub async fn create(
     .await
 }
 
-pub async fn list_by_project(
-    pool: &PgPool,
-    project_id: Uuid,
-) -> Result<Vec<Plan>, sqlx::Error> {
+pub async fn list_by_project(pool: &PgPool, project_id: Uuid) -> Result<Vec<Plan>, sqlx::Error> {
     sqlx::query_as!(
         Plan,
         r#"SELECT id, project_id, name, monthly_request_quota,

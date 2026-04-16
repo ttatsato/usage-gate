@@ -1,4 +1,6 @@
 use sqlx::postgres::PgPoolOptions;
+use std::sync::Arc;
+use usage_gate::adapters::quota_counter::database::DatabaseQuotaCounter;
 use usage_gate::create_router;
 
 #[tokio::main]
@@ -21,8 +23,8 @@ async fn main() {
         .init();
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
-
-    let app = create_router(pool);
+    let quota_counter = Arc::new(DatabaseQuotaCounter::new(pool.clone()));
+    let app = create_router(pool, quota_counter);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port)
         .await

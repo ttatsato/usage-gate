@@ -3,6 +3,7 @@ pub mod models;
 pub mod repositories;
 pub mod routes;
 pub mod utils;
+pub mod adapters;
 
 use axum::{
     Router, middleware as axum_middleware,
@@ -22,22 +23,20 @@ use routes::admin::upstream_services::{create_upstream_service, list_upstream_se
 use routes::admin::usage::get_usage;
 use routes::health::health;
 use routes::proxy::proxy;
+use std::sync::Arc;
+use adapters::quota_counter::QuotaCounter;
 
-pub fn create_router(pool: PgPool) -> Router {
+pub fn create_router(pool: PgPool, quota_counter: Arc<dyn QuotaCounter>) -> Router {
     // /proxy/{name}/{*rest_path} のルーティング
     // テスト用に /proxy/test も残しておく
     let protected_routes = Router::new()
         .route("/proxy/test", get(|| async { "ok" }))
         .route(
             "/proxy/{name}/{*rest_path}",
-            get(proxy)
-                .post(proxy)
-                .put(proxy)
-                .delete(proxy)
-                .patch(proxy),
+            get(proxy).post(proxy).put(proxy).delete(proxy).patch(proxy),
         )
-        .route_layer(axum_middleware::from_fn_with_state(pool.clone(), metering))
-        .route_layer(axum_middleware::from_fn_with_state(pool.clone(), quota))
+        .route_layer(axum_middleware::from_fn_with_state((pool.clone(), quota_counter.clone()), metering))
+        .route_layer(axum_middleware::from_fn_with_state(quota_counter.clone(), quota))
         .route_layer(axum_middleware::from_fn_with_state(pool.clone(), auth));
 
     let public_routes = Router::new()

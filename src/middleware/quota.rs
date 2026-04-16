@@ -1,5 +1,5 @@
+use crate::adapters::quota_counter::QuotaCounter;
 use crate::models::api_key::AuthedApiKey;
-use crate::repositories::usage_repository;
 use axum::{
     Json,
     extract::{Request, State},
@@ -8,10 +8,10 @@ use axum::{
     response::Response,
 };
 use serde_json::json;
-use sqlx::PgPool;
+use std::sync::Arc;
 
 pub async fn quota(
-    State(pool): State<PgPool>,
+    State(counter): State<Arc<dyn QuotaCounter>>,
     request: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
@@ -21,7 +21,8 @@ pub async fn quota(
         // 全てのカラムがnullの時はチェックは通らない
         if let Some(quota) = authed.monthly_request_quota {
             // NOTE: 月間使用量
-            let current = usage_repository::count_current_month_requests(&pool, authed.consumer_id)
+            let current = counter
+                .get_count(authed.consumer_id)
                 .await
                 .map_err(|_| {
                     (
