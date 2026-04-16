@@ -1,3 +1,4 @@
+use crate::adapters::quota_counter::{QuotaCounter, QuotaPeriod};
 use crate::models::api_key::AuthedApiKey;
 use crate::repositories::usage_repository;
 use axum::{
@@ -7,7 +8,6 @@ use axum::{
 };
 use sqlx::PgPool;
 use std::sync::Arc;
-use crate::adapters::quota_counter::QuotaCounter;
 
 // メータリングミドルウェア
 // Auth ミドルウェアの後に動き、リクエスト完了後に使用量を記録する
@@ -39,8 +39,8 @@ pub async fn metering(State((pool, counter)): State<(PgPool, Arc<dyn QuotaCounte
             )
             .await;
 
-            // カウンターを +1
-            let _ = counter.increment(authed.consumer_id).await;
+            // Valkey カウンターを +1（Monthly）
+            let _ = counter.increment(authed.consumer_id, &QuotaPeriod::Monthly).await;
         });
     }
 
