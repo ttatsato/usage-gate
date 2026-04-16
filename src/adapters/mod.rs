@@ -1,1 +1,1 @@
-pub mod quota_counter;
+pub mod rate_limiter;

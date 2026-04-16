@@ -9,6 +9,9 @@ pub struct Plan {
     pub project_id: Uuid,
     pub name: String,
     pub monthly_request_quota: Option<i32>,
+    pub daily_request_quota: Option<i32>,
+    pub hourly_request_quota: Option<i32>,
+    pub per_second_request_limit: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -18,4 +21,7 @@ pub struct CreatePlan {
     pub project_id: Uuid,
     pub name: String,
     pub monthly_request_quota: Option<i32>,
+    pub daily_request_quota: Option<i32>,
+    pub hourly_request_quota: Option<i32>,
+    pub per_second_request_limit: Option<i32>,
 }

@@ -15,7 +15,10 @@ pub async fn find_active_by_key_hash(
             ak.consumer_id,
             p.id as "plan_id?",
             p.name as "plan_name?",
-            p.monthly_request_quota
+            p.monthly_request_quota,
+            p.daily_request_quota,
+            p.hourly_request_quota,
+            p.per_second_request_limit
         FROM api_keys ak
         JOIN consumers c ON c.id = ak.consumer_id
         LEFT JOIN plans p ON p.id = c.plan_id

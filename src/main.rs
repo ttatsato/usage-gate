@@ -1,6 +1,6 @@
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
-use usage_gate::adapters::quota_counter::valkey::ValkeyQuotaCounter;
+use usage_gate::adapters::rate_limiter::valkey::ValkeyRateLimiter;
 use usage_gate::create_router;
 use usage_gate::routes::system::quota_sync::do_sync_to_db;
 
@@ -20,15 +20,15 @@ async fn main() {
         )
         .init();
 
-    let url = std::env::var("QUOTA_COUNTER_URL").expect("QUOTA_COUNTER_URL not set");
-    let quota_counter = match std::env::var("QUOTA_COUNTER").as_deref() {
+    let url = std::env::var("RATE_LIMITER_URL").expect("RATE_LIMITER_URL not set");
+    let rate_limiter = match std::env::var("RATE_LIMITER").as_deref() {
         Ok("valkey") => Arc::new(
-            ValkeyQuotaCounter::new(&url)
+            ValkeyRateLimiter::new(&url)
                 .await
                 .expect("Failed to connect to Valkey"),
         ),
         _ => {
-            panic!("QUOTA_COUNTER must be set (supported: valkey)")
+            panic!("RATE_LIMITER must be set (supported: valkey)")
         }
     };
 
@@ -36,7 +36,7 @@ async fn main() {
     match args.get(1).map(|s| s.as_str()) {
         Some("sync-to-db") => {
             tracing::info!("Starting Valkey → DB sync");
-            match do_sync_to_db(&pool, &*quota_counter).await {
+            match do_sync_to_db(&pool, &*rate_limiter).await {
                 Ok(count) => tracing::info!("Synced {} consumers from Valkey to DB", count),
                 Err(e) => tracing::error!("Sync failed: {}", e),
             }
@@ -53,13 +53,13 @@ async fn main() {
     // 定期バッチ: 1時間ごとに Valkey → DB 同期
     {
         let pool = pool.clone();
-        let counter = quota_counter.clone();
+        let limiter = rate_limiter.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
             loop {
                 interval.tick().await;
                 tracing::info!("Starting periodic quota sync to DB");
-                match do_sync_to_db(&pool, &*counter).await {
+                match do_sync_to_db(&pool, &*limiter).await {
                     Ok(count) => tracing::info!("Quota sync completed: {} consumers synced", count),
                     Err(e) => tracing::error!("Quota sync failed: {}", e),
                 }
@@ -68,7 +68,7 @@ async fn main() {
     }
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
-    let app = create_router(pool, quota_counter);
+    let app = create_router(pool, rate_limiter);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port)
         .await
