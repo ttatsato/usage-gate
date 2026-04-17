@@ -28,9 +28,9 @@ pub async fn quota(
         if let Some(v) = authed.hourly_request_quota {
             limits.push(RateLimit { period: RateLimitPeriod::Hourly, max_requests: v as i64 });
         }
-        // 秒間制限: 未設定の場合はデフォルト 10 req/sec でバースト防止
-        let per_second = authed.per_second_request_limit.unwrap_or(10);
-        limits.push(RateLimit { period: RateLimitPeriod::PerSecond, max_requests: per_second as i64 });
+        if let Some(v) = authed.per_second_request_limit {
+            limits.push(RateLimit { period: RateLimitPeriod::PerSecond, max_requests: v as i64 });
+        }
 
         if !limits.is_empty() {
             let allowed = limiter
