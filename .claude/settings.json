@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo run:*)",
+      "Bash(SQLX_OFFLINE=true cargo build)",
+      "Bash(SQLX_OFFLINE=true cargo build:*)",
+      "Bash(cargo sqlx prepare:*)",
+      "Bash(sqlx database:*)",
+      "Bash(sqlx migrate:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker exec usage-gate-db:*)",
+      "Bash(docker exec usage-gate-valkey:*)",
+      "Bash(PGPASSWORD=usage_gate psql:*)",
+      "Bash(RATE_LIMITER_URL=redis://localhost:6380 cargo test)",
+      "Bash(RATE_LIMITER_URL=redis://localhost:6380 cargo test:*)",
+      "Bash(RATE_LIMITER=valkey RATE_LIMITER_URL=redis://localhost:6380 cargo test)",
+      "Bash(RATE_LIMITER=valkey RATE_LIMITER_URL=redis://localhost:6380 cargo test:*)",
+      "Bash(QUOTA_COUNTER=valkey QUOTA_COUNTER_URL=redis://localhost:6380 cargo test:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh api:*)"
+    ]
+  }
+}
