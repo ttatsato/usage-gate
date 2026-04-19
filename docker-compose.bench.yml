@@ -1,0 +1,28 @@
+include:
+  - docker-compose.yml
+
+services:
+  usage-gate:
+    build: .
+    container_name: usage-gate-bench
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-usage_gate}:${POSTGRES_PASSWORD:-usage_gate}@postgres:5432/${POSTGRES_DB:-usage_gate}
+      RATE_LIMITER: valkey
+      RATE_LIMITER_URL: redis://valkey:6379
+      API_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - valkey
+    cpus: 2
+    mem_limit: 512m
+
+  mock-upstream:
+    build: .
+    container_name: usage-gate-mock-upstream
+    command: ["/usr/local/bin/mock_upstream"]
+    environment:
+      MOCK_UPSTREAM_PORT: "9090"
+    cpus: 1
+    mem_limit: 128m
