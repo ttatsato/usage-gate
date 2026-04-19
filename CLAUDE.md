@@ -24,20 +24,24 @@ src/
 - `rustup component add rustfmt clippy`
 - sqlx-cli（migration 操作に必要）
 
-### ポート（docker-compose.yml と食い違いやすい罠）
+### ポート / 認証情報
 
-| サービス | ホスト側 | コンテナ側 |
-|---|---|---|
-| Postgres | **5433** | 5432 |
-| Valkey   | **6380** | 6379 |
+`.env`（`cp .env.example .env`）で一元管理。docker-compose.yml は `${POSTGRES_PORT:-5433}` 等の形で同じ変数を読むので、**ホスト側ポートは .env を正とする**。
 
-`.env.example` の `DATABASE_URL` はローカル開発で実際にサーバーを起動するとき用なので、ホスト側ポートを見て整合していること。
+| サービス | デフォルト（ホスト側）| コンテナ側 | 制御変数 |
+|---|---|---|---|
+| Postgres | **5433** | 5432 | `POSTGRES_PORT` |
+| Valkey   | **6380** | 6379 | `VALKEY_PORT` |
 
-### 必須環境変数
+ポート衝突時は `.env` の `POSTGRES_PORT` / `VALKEY_PORT` と `DATABASE_URL` / `RATE_LIMITER_URL` を**両方**書き換える（URL 内補間はしていないため二重定義）。
+
+### 環境変数
 
 | 変数 | 用途 |
 |---|---|
-| `DATABASE_URL` | Postgres 接続 |
+| `DATABASE_URL` | Postgres 接続（URL 形式。ポートは `POSTGRES_PORT` と一致させる） |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | docker-compose の Postgres 設定 |
+| `VALKEY_PORT` | docker-compose の Valkey ホスト側ポート |
 | `RATE_LIMITER` | 現状 `valkey` のみ対応（それ以外は main.rs で panic） |
 | `RATE_LIMITER_URL` | Valkey 接続（例：`redis://localhost:6380`） |
 | `QUOTA_COUNTER` / `QUOTA_COUNTER_URL` | クォータカウンタ（テストで併用される） |

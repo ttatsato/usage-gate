@@ -25,9 +25,35 @@
       "Bash(gh issue:*)",
       "Bash(gh pr:*)",
       "Bash(gh api:*)"
+    ],
+    "ask": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git branch -D:*)",
+      "Bash(sqlx migrate revert:*)",
+      "Bash(sqlx database drop:*)",
+      "Bash(cargo sqlx migrate revert:*)",
+      "Bash(cargo sqlx database drop:*)",
+      "Bash(docker compose down -v:*)",
+      "Bash(docker compose down --volumes:*)",
+      "Bash(docker compose rm -v:*)",
+      "Bash(docker volume rm:*)",
+      "Bash(docker volume prune:*)"
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\"; db_url=\"${DATABASE_URL:-$(grep -E '^DATABASE_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-)}\"; rl_url=\"${RATE_LIMITER_URL:-$(grep -E '^RATE_LIMITER_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-)}\"; pg_port=$(printf '%s' \"$db_url\" | sed -En 's#.*:([0-9]+)(/.*)?$#\\1#p'); vk_port=$(printf '%s' \"$rl_url\" | sed -En 's#.*:([0-9]+)(/.*)?$#\\1#p'); pg_port=\"${pg_port:-5433}\"; vk_port=\"${vk_port:-6380}\"; pg=$(nc -z localhost \"$pg_port\" 2>/dev/null && echo 1 || echo 0); vk=$(nc -z localhost \"$vk_port\" 2>/dev/null && echo 1 || echo 0); if [ \"$pg\" = \"0\" ] || [ \"$vk\" = \"0\" ]; then missing=\"\"; [ \"$pg\" = \"0\" ] && missing=\"$missing postgres($pg_port)\"; [ \"$vk\" = \"0\" ] && missing=\"$missing valkey($vk_port)\"; jq -n --arg m \"$missing\" '{systemMessage: (\"Docker services not reachable:\" + $m + \". Run: docker compose up -d\"), hookSpecificOutput: {hookEventName: \"SessionStart\", additionalContext: (\"Dev env warning: missing services:\" + $m + \". DB-touching commands will fail until services are up.\")}}'; fi; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
@@ -45,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\"; nc -z localhost 5433 2>/dev/null || exit 0; out=$(cargo check --quiet 2>&1); rc=$?; [ $rc -ne 0 ] && printf '%s' \"$out\" | tail -30 | jq -Rs '{systemMessage: (\"cargo check failed at Stop:\\n\" + .)}'; exit 0",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\"; db_url=\"${DATABASE_URL:-$(grep -E '^DATABASE_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-)}\"; pg_port=$(printf '%s' \"$db_url\" | sed -En 's#.*:([0-9]+)(/.*)?$#\\1#p'); pg_port=\"${pg_port:-5433}\"; nc -z localhost \"$pg_port\" 2>/dev/null || exit 0; out=$(cargo check --quiet 2>&1); rc=$?; [ $rc -ne 0 ] && printf '%s' \"$out\" | tail -30 | jq -Rs '{systemMessage: (\"cargo check failed at Stop:\\n\" + .)}'; exit 0",
             "timeout": 60,
             "statusMessage": "cargo check (Stop hook)"
           }
