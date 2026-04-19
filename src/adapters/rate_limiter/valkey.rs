@@ -92,52 +92,53 @@ impl ValkeyRateLimiter {
     }
 }
 
-/// Token Bucket チェック: トークンを補充して残数を返す（消費しない）
-const TOKEN_BUCKET_CHECK_SCRIPT: &str = r#"
-local tokens_key = KEYS[1]
-local last_key = KEYS[2]
-local max_tokens = tonumber(ARGV[1])
-local refill_rate = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
+/// Token Bucket 全バケット一括 check-and-consume（atomic）
+/// KEYS: 各 limit ごとに (tokens_key, last_key) のペア
+/// ARGV: now, num_limits, 各 limit ごとに (max_tokens, refill_rate, ttl)
+/// 返り値: 1 = 許可, 0 = 拒否
+const TOKEN_BUCKET_ACQUIRE_SCRIPT: &str = r#"
+local now = tonumber(ARGV[1])
+local n = tonumber(ARGV[2])
 
-local tokens = tonumber(redis.call('GET', tokens_key))
-local last = tonumber(redis.call('GET', last_key))
+-- Phase 1: 全バケットを読み、補充後の残量を算出
+local refilled = {}
+for i = 1, n do
+    local tokens_key = KEYS[(i - 1) * 2 + 1]
+    local last_key = KEYS[(i - 1) * 2 + 2]
+    local max_tokens = tonumber(ARGV[2 + (i - 1) * 3 + 1])
+    local refill_rate = tonumber(ARGV[2 + (i - 1) * 3 + 2])
 
-if tokens == nil then
-    return max_tokens
+    local tokens = tonumber(redis.call('GET', tokens_key))
+    local last = tonumber(redis.call('GET', last_key))
+
+    if tokens == nil then
+        tokens = max_tokens
+        last = now
+    end
+
+    local elapsed = math.max(0, now - last)
+    tokens = math.min(max_tokens, tokens + elapsed * refill_rate)
+
+    if tokens < 1 then
+        return 0
+    end
+
+    refilled[i] = tokens
 end
 
-local elapsed = math.max(0, now - last)
-tokens = math.min(max_tokens, tokens + elapsed * refill_rate)
+-- Phase 2: 全バケットが通ったので消費
+for i = 1, n do
+    local tokens_key = KEYS[(i - 1) * 2 + 1]
+    local last_key = KEYS[(i - 1) * 2 + 2]
+    local ttl = tonumber(ARGV[2 + (i - 1) * 3 + 3])
 
-return tokens
-"#;
-
-/// Token Bucket 消費: トークンを補充してから1つ消費する
-const TOKEN_BUCKET_CONSUME_SCRIPT: &str = r#"
-local tokens_key = KEYS[1]
-local last_key = KEYS[2]
-local max_tokens = tonumber(ARGV[1])
-local refill_rate = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
-local ttl = tonumber(ARGV[4])
-
-local tokens = tonumber(redis.call('GET', tokens_key))
-local last = tonumber(redis.call('GET', last_key))
-
-if tokens == nil then
-    tokens = max_tokens
-    last = now
+    local new_tokens = refilled[i] - 1
+    redis.call('SET', tokens_key, tostring(new_tokens))
+    redis.call('SET', last_key, tostring(now))
+    redis.call('EXPIRE', tokens_key, ttl)
+    redis.call('EXPIRE', last_key, ttl)
 end
 
-local elapsed = math.max(0, now - last)
-tokens = math.min(max_tokens, tokens + elapsed * refill_rate)
-
-tokens = tokens - 1
-redis.call('SET', tokens_key, tostring(tokens))
-redis.call('SET', last_key, tostring(now))
-redis.call('EXPIRE', tokens_key, ttl)
-redis.call('EXPIRE', last_key, ttl)
 return 1
 "#;
 
@@ -156,47 +157,31 @@ impl RateLimiter for ValkeyRateLimiter {
 
         let now = Utc::now().timestamp_millis() as f64 / 1000.0;
 
-        // Phase 1: 全バケットをチェック（消費しない）
+        // 全バケットを 1 本の Lua で atomic に check + consume する
+        let script = redis::Script::new(TOKEN_BUCKET_ACQUIRE_SCRIPT);
+        let mut invocation = script.prepare_invoke();
+
         for limit in limits {
-            let tokens_key = self.tokens_key(consumer_id, &limit.period);
-            let last_key = self.last_key(consumer_id, &limit.period);
-            let refill_rate = Self::refill_rate(&limit.period, limit.max_requests);
-
-            let tokens: f64 = redis::Script::new(TOKEN_BUCKET_CHECK_SCRIPT)
-                .key(&tokens_key)
-                .key(&last_key)
-                .arg(limit.max_requests)
-                .arg(refill_rate)
-                .arg(now)
-                .invoke_async(&mut conn)
-                .await
-                .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
-
-            if tokens < 1.0 {
-                return Ok(false);
-            }
+            invocation
+                .key(self.tokens_key(consumer_id, &limit.period))
+                .key(self.last_key(consumer_id, &limit.period));
         }
 
-        // Phase 2: 全バケットが通ったので、全て消費する
-        for limit in limits {
-            let tokens_key = self.tokens_key(consumer_id, &limit.period);
-            let last_key = self.last_key(consumer_id, &limit.period);
-            let refill_rate = Self::refill_rate(&limit.period, limit.max_requests);
-            let ttl = Self::ttl_seconds(&limit.period);
+        invocation.arg(now).arg(limits.len());
 
-            let _: i32 = redis::Script::new(TOKEN_BUCKET_CONSUME_SCRIPT)
-                .key(&tokens_key)
-                .key(&last_key)
+        for limit in limits {
+            invocation
                 .arg(limit.max_requests)
-                .arg(refill_rate)
-                .arg(now)
-                .arg(ttl)
-                .invoke_async(&mut conn)
-                .await
-                .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
+                .arg(Self::refill_rate(&limit.period, limit.max_requests))
+                .arg(Self::ttl_seconds(&limit.period));
         }
 
-        Ok(true)
+        let allowed: i32 = invocation
+            .invoke_async(&mut conn)
+            .await
+            .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
+
+        Ok(allowed == 1)
     }
 
     async fn get_usage(

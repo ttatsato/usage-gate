@@ -394,3 +394,33 @@ async fn proxy_passes_when_under_quota() {
 
     cleanup(&pool, tenant_id).await;
 }
+
+// --- RateLimiter 並行性 ---
+
+#[tokio::test]
+async fn rate_limiter_does_not_over_admit_under_concurrency() {
+    let (_app, _pool, limiter) = setup().await;
+
+    let consumer_id = uuid::Uuid::new_v4();
+    let max = 5i64;
+    let limits = vec![RateLimit { period: RateLimitPeriod::PerSecond, max_requests: max }];
+
+    let n = 50usize;
+    let mut handles = Vec::with_capacity(n);
+    for _ in 0..n {
+        let limiter = limiter.clone();
+        let limits = limits.clone();
+        handles.push(tokio::spawn(async move {
+            limiter.try_acquire(consumer_id, &limits).await.unwrap()
+        }));
+    }
+
+    let mut allowed = 0;
+    for h in handles {
+        if h.await.unwrap() {
+            allowed += 1;
+        }
+    }
+
+    assert_eq!(allowed, max, "想定: {} 許可 / 実測: {} 許可", max, allowed);
+}
