@@ -92,41 +92,54 @@ impl ValkeyRateLimiter {
     }
 }
 
-/// Token Bucket の Lua スクリプト
-/// 原子的にトークンを補充 → チェック → 消費する
-const TOKEN_BUCKET_SCRIPT: &str = r#"
-local tokens_key = KEYS[1]
-local last_key = KEYS[2]
-local max_tokens = tonumber(ARGV[1])
-local refill_rate = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
-local ttl = tonumber(ARGV[4])
+/// Token Bucket 全バケット一括 check-and-consume（atomic）
+/// KEYS: 各 limit ごとに (tokens_key, last_key) のペア
+/// ARGV: now, num_limits, 各 limit ごとに (max_tokens, refill_rate, ttl)
+/// 返り値: 1 = 許可, 0 = 拒否
+const TOKEN_BUCKET_ACQUIRE_SCRIPT: &str = r#"
+local now = tonumber(ARGV[1])
+local n = tonumber(ARGV[2])
 
-local tokens = tonumber(redis.call('GET', tokens_key))
-local last = tonumber(redis.call('GET', last_key))
+-- Phase 1: 全バケットを読み、補充後の残量を算出
+local refilled = {}
+for i = 1, n do
+    local tokens_key = KEYS[(i - 1) * 2 + 1]
+    local last_key = KEYS[(i - 1) * 2 + 2]
+    local max_tokens = tonumber(ARGV[2 + (i - 1) * 3 + 1])
+    local refill_rate = tonumber(ARGV[2 + (i - 1) * 3 + 2])
 
-if tokens == nil then
-    tokens = max_tokens
-    last = now
+    local tokens = tonumber(redis.call('GET', tokens_key))
+    local last = tonumber(redis.call('GET', last_key))
+
+    if tokens == nil then
+        tokens = max_tokens
+        last = now
+    end
+
+    local elapsed = math.max(0, now - last)
+    tokens = math.min(max_tokens, tokens + elapsed * refill_rate)
+
+    if tokens < 1 then
+        return 0
+    end
+
+    refilled[i] = tokens
 end
 
-local elapsed = math.max(0, now - last)
-tokens = math.min(max_tokens, tokens + elapsed * refill_rate)
+-- Phase 2: 全バケットが通ったので消費
+for i = 1, n do
+    local tokens_key = KEYS[(i - 1) * 2 + 1]
+    local last_key = KEYS[(i - 1) * 2 + 2]
+    local ttl = tonumber(ARGV[2 + (i - 1) * 3 + 3])
 
-if tokens >= 1 then
-    tokens = tokens - 1
-    redis.call('SET', tokens_key, tostring(tokens))
+    local new_tokens = refilled[i] - 1
+    redis.call('SET', tokens_key, tostring(new_tokens))
     redis.call('SET', last_key, tostring(now))
     redis.call('EXPIRE', tokens_key, ttl)
     redis.call('EXPIRE', last_key, ttl)
-    return 1
-else
-    redis.call('SET', tokens_key, tostring(tokens))
-    redis.call('SET', last_key, tostring(now))
-    redis.call('EXPIRE', tokens_key, ttl)
-    redis.call('EXPIRE', last_key, ttl)
-    return 0
 end
+
+return 1
 "#;
 
 #[async_trait]
@@ -144,29 +157,31 @@ impl RateLimiter for ValkeyRateLimiter {
 
         let now = Utc::now().timestamp_millis() as f64 / 1000.0;
 
+        // 全バケットを 1 本の Lua で atomic に check + consume する
+        let script = redis::Script::new(TOKEN_BUCKET_ACQUIRE_SCRIPT);
+        let mut invocation = script.prepare_invoke();
+
         for limit in limits {
-            let tokens_key = self.tokens_key(consumer_id, &limit.period);
-            let last_key = self.last_key(consumer_id, &limit.period);
-            let refill_rate = Self::refill_rate(&limit.period, limit.max_requests);
-            let ttl = Self::ttl_seconds(&limit.period);
-
-            let result: i32 = redis::Script::new(TOKEN_BUCKET_SCRIPT)
-                .key(&tokens_key)
-                .key(&last_key)
-                .arg(limit.max_requests)
-                .arg(refill_rate)
-                .arg(now)
-                .arg(ttl)
-                .invoke_async(&mut conn)
-                .await
-                .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
-
-            if result == 0 {
-                return Ok(false);
-            }
+            invocation
+                .key(self.tokens_key(consumer_id, &limit.period))
+                .key(self.last_key(consumer_id, &limit.period));
         }
 
-        Ok(true)
+        invocation.arg(now).arg(limits.len());
+
+        for limit in limits {
+            invocation
+                .arg(limit.max_requests)
+                .arg(Self::refill_rate(&limit.period, limit.max_requests))
+                .arg(Self::ttl_seconds(&limit.period));
+        }
+
+        let allowed: i32 = invocation
+            .invoke_async(&mut conn)
+            .await
+            .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
+
+        Ok(allowed == 1)
     }
 
     async fn get_usage(
