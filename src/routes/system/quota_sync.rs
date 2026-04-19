@@ -1,13 +1,8 @@
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-};
+use crate::adapters::rate_limiter::RateLimiter;
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
-use crate::adapters::rate_limiter::RateLimiter;
 
 /// Valkey → DB: 使用量を DB に永続化（請求用）
 pub async fn sync_to_db(
@@ -44,7 +39,11 @@ pub async fn do_sync_to_db(pool: &PgPool, limiter: &dyn RateLimiter) -> Result<i
     for row in &rows {
         if let Some(max_requests) = row.monthly_request_quota {
             let usage = limiter
-                .get_usage(row.consumer_id, &RateLimitPeriod::Monthly, max_requests as i64)
+                .get_usage(
+                    row.consumer_id,
+                    &RateLimitPeriod::Monthly,
+                    max_requests as i64,
+                )
                 .await
                 .map_err(|e| format!("{:?}", e))?;
 

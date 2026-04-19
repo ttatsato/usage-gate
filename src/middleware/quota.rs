@@ -20,16 +20,28 @@ pub async fn quota(
         // プランに設定された制限を収集
         let mut limits = Vec::new();
         if let Some(v) = authed.monthly_request_quota {
-            limits.push(RateLimit { period: RateLimitPeriod::Monthly, max_requests: v as i64 });
+            limits.push(RateLimit {
+                period: RateLimitPeriod::Monthly,
+                max_requests: v as i64,
+            });
         }
         if let Some(v) = authed.daily_request_quota {
-            limits.push(RateLimit { period: RateLimitPeriod::Daily, max_requests: v as i64 });
+            limits.push(RateLimit {
+                period: RateLimitPeriod::Daily,
+                max_requests: v as i64,
+            });
         }
         if let Some(v) = authed.hourly_request_quota {
-            limits.push(RateLimit { period: RateLimitPeriod::Hourly, max_requests: v as i64 });
+            limits.push(RateLimit {
+                period: RateLimitPeriod::Hourly,
+                max_requests: v as i64,
+            });
         }
         if let Some(v) = authed.per_second_request_limit {
-            limits.push(RateLimit { period: RateLimitPeriod::PerSecond, max_requests: v as i64 });
+            limits.push(RateLimit {
+                period: RateLimitPeriod::PerSecond,
+                max_requests: v as i64,
+            });
         }
 
         if !limits.is_empty() {

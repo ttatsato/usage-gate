@@ -3,11 +3,11 @@ services:
     image: postgres:17
     container_name: usage-gate-db
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     environment:
-      POSTGRES_USER: usage_gate
-      POSTGRES_PASSWORD: usage_gate
-      POSTGRES_DB: usage_gate
+      POSTGRES_USER: ${POSTGRES_USER:-usage_gate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-usage_gate}
+      POSTGRES_DB: ${POSTGRES_DB:-usage_gate}
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -15,7 +15,7 @@ services:
     image: valkey/valkey:8
     container_name: usage-gate-valkey
     ports:
-      - "6380:6379"
+      - "${VALKEY_PORT:-6380}:6379"
     volumes:
       - valkeydata:/data
 

@@ -36,7 +36,11 @@ impl ValkeyRateLimiter {
                 format!("rl:{}:{}:daily:tokens", consumer_id, now.format("%Y-%m-%d"))
             }
             RateLimitPeriod::Hourly => {
-                format!("rl:{}:{}:hourly:tokens", consumer_id, now.format("%Y-%m-%dT%H"))
+                format!(
+                    "rl:{}:{}:hourly:tokens",
+                    consumer_id,
+                    now.format("%Y-%m-%dT%H")
+                )
             }
             RateLimitPeriod::PerSecond => {
                 format!("rl:{}:persec:tokens", consumer_id)
@@ -54,7 +58,11 @@ impl ValkeyRateLimiter {
                 format!("rl:{}:{}:daily:last", consumer_id, now.format("%Y-%m-%d"))
             }
             RateLimitPeriod::Hourly => {
-                format!("rl:{}:{}:hourly:last", consumer_id, now.format("%Y-%m-%dT%H"))
+                format!(
+                    "rl:{}:{}:hourly:last",
+                    consumer_id,
+                    now.format("%Y-%m-%dT%H")
+                )
             }
             RateLimitPeriod::PerSecond => {
                 format!("rl:{}:persec:last", consumer_id)
