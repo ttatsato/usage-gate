@@ -26,5 +26,31 @@
       "Bash(gh pr:*)",
       "Bash(gh api:*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); [[ \"$f\" == *.rs ]] && rustfmt --edition 2024 \"$f\" 2>/dev/null; exit 0",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\"; nc -z localhost 5433 2>/dev/null || exit 0; out=$(cargo check --quiet 2>&1); rc=$?; [ $rc -ne 0 ] && printf '%s' \"$out\" | tail -30 | jq -Rs '{systemMessage: (\"cargo check failed at Stop:\\n\" + .)}'; exit 0",
+            "timeout": 60,
+            "statusMessage": "cargo check (Stop hook)"
+          }
+        ]
+      }
+    ]
   }
 }
