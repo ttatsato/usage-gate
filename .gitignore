@@ -1,3 +1,4 @@
 /target
 .env
 .claude/settings.local.json
+tests/k6/.env
