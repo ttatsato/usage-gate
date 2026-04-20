@@ -1,3 +1,5 @@
+use crate::adapters::auth_cache::AuthCache;
+use crate::models::api_key::AuthedApiKey;
 use crate::repositories::api_key_repository;
 use crate::utils::hash::hash_api_key;
 use axum::{
@@ -9,9 +11,10 @@ use axum::{
 };
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::Arc;
 
 pub async fn auth(
-    State(pool): State<PgPool>,
+    State((pool, auth_cache, ttl_secs)): State<(PgPool, Arc<dyn AuthCache>, u64)>,
     request: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
@@ -30,28 +33,48 @@ pub async fn auth(
         }
     };
 
-    // 受け取ったキーをハッシュ化して DB と照合
     let key_hash = hash_api_key(api_key);
-    let row = api_key_repository::find_active_by_key_hash(&pool, &key_hash)
-        .await
-        .map_err(|_| {
+
+    if let Some(json) = auth_cache.get(&key_hash).await {
+        let authed: AuthedApiKey = serde_json::from_str(&json).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Internal server error"})),
             )
         })?;
+        let mut request = request;
+        request.extensions_mut().insert(authed);
+        return Ok(next.run(request).await);
+    } else {
+        let row = api_key_repository::find_active_by_key_hash(&pool, &key_hash)
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Internal server error"})),
+                )
+            })?;
 
-    match row {
-        Some(authed) => {
-            // リクエストの extensions にテナント情報を添付
-            // 後続のミドルウェアやハンドラから取り出せる
-            let mut request = request;
-            request.extensions_mut().insert(authed);
-            Ok(next.run(request).await)
+        match row {
+            Some(authed) => {
+                let json = serde_json::to_string(&authed).map_err(|_| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": "Internal server error"})),
+                    )
+                })?;
+                // キャッシュに保管
+                auth_cache.set(&key_hash, &json, ttl_secs).await;
+                // リクエストの extensions にテナント情報を添付
+                // 後続のミドルウェアやハンドラから取り出せる
+                let mut request = request;
+                request.extensions_mut().insert(authed);
+                Ok(next.run(request).await)
+            }
+            None => Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Unauthorized"})),
+            )),
         }
-        None => Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "Unauthorized"})),
-        )),
     }
 }

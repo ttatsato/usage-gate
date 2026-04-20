@@ -11,6 +11,7 @@ use axum::{
 };
 use sqlx::PgPool;
 
+use adapters::auth_cache::AuthCache;
 use adapters::rate_limiter::RateLimiter;
 use middleware::auth::auth;
 use middleware::metering::metering;
@@ -27,7 +28,12 @@ use routes::proxy::proxy;
 use routes::system::quota_sync::sync_to_db;
 use std::sync::Arc;
 
-pub fn create_router(pool: PgPool, rate_limiter: Arc<dyn RateLimiter>) -> Router {
+pub fn create_router(
+    pool: PgPool,
+    rate_limiter: Arc<dyn RateLimiter>,
+    auth_cache: Arc<dyn AuthCache>,
+    auth_cache_ttl_secs: u64,
+) -> Router {
     let protected_routes = Router::new()
         .route("/proxy/test", get(|| async { "ok" }))
         .route(
@@ -39,8 +45,10 @@ pub fn create_router(pool: PgPool, rate_limiter: Arc<dyn RateLimiter>) -> Router
             rate_limiter.clone(),
             quota,
         ))
-        .route_layer(axum_middleware::from_fn_with_state(pool.clone(), auth));
-
+        .route_layer(axum_middleware::from_fn_with_state(
+            (pool.clone(), auth_cache.clone(), auth_cache_ttl_secs),
+            auth,
+        ));
     let system_routes = Router::new()
         .route("/system/quota/sync-to-db", post(sync_to_db))
         .with_state((pool.clone(), rate_limiter.clone()));

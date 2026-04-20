@@ -37,7 +37,7 @@ pub struct CreatedApiKey {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(sqlx::FromRow, Clone)]
+#[derive(sqlx::FromRow, Clone, Serialize, Deserialize)]
 pub struct AuthedApiKey {
     pub api_key_id: Uuid,
     pub tenant_id: Uuid,
