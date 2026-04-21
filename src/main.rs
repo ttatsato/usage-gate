@@ -33,17 +33,6 @@ async fn main() {
         }
     };
 
-    let auth_cache_ttl_secs =
-        std::env::var("AUTH_CACHE_TTL_SECS").expect("AUTH_CACHE_TTL_SECS not set");
-    let ttl_seconds: u64 = auth_cache_ttl_secs
-        .parse()
-        .expect("AUTH_CACHE_TTL_SECS must be a valid number");
-    let valkey_auth_cache = Arc::new(
-        ValkeyAuthCache::new(&url)
-            .await
-            .expect("Failed to connect to Valkey"),
-    );
-
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(|s| s.as_str()) {
         Some("sync-to-db") => {
@@ -61,6 +50,17 @@ async fn main() {
         }
         None => {}
     }
+
+    let auth_cache_ttl_secs =
+        std::env::var("AUTH_CACHE_TTL_SECS").expect("AUTH_CACHE_TTL_SECS not set");
+    let ttl_seconds: u64 = auth_cache_ttl_secs
+        .parse()
+        .expect("AUTH_CACHE_TTL_SECS must be a valid number");
+    let valkey_auth_cache = Arc::new(
+        ValkeyAuthCache::new(&url)
+            .await
+            .expect("Failed to connect to Valkey"),
+    );
 
     // 定期バッチ: 1時間ごとに Valkey → DB 同期
     {
