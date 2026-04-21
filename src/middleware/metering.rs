@@ -1,5 +1,5 @@
 use crate::models::api_key::AuthedApiKey;
-use crate::repositories::usage_repository;
+use crate::repositories::usage_repository::{self, RecordUsageParams};
 use axum::{
     extract::{Request, State},
     middleware::Next,
@@ -21,13 +21,15 @@ pub async fn metering(State(pool): State<PgPool>, request: Request, next: Next) 
         tokio::spawn(async move {
             let _ = usage_repository::record_usage(
                 &pool,
-                authed.tenant_id,
-                authed.project_id,
-                authed.consumer_id,
-                authed.api_key_id,
-                &endpoint,
-                &method,
-                status_code,
+                RecordUsageParams {
+                    tenant_id: authed.tenant_id,
+                    project_id: authed.project_id,
+                    consumer_id: authed.consumer_id,
+                    api_key_id: authed.api_key_id,
+                    endpoint,
+                    method,
+                    status_code,
+                },
             )
             .await;
         });

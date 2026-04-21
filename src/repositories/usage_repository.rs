@@ -3,26 +3,30 @@ use chrono::{DateTime, Datelike, TimeZone, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub struct RecordUsageParams {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub consumer_id: Uuid,
+    pub api_key_id: Uuid,
+    pub endpoint: String,
+    pub method: String,
+    pub status_code: i16,
+}
+
 pub async fn record_usage(
     pool: &PgPool,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    consumer_id: Uuid,
-    api_key_id: Uuid,
-    endpoint: &str,
-    method: &str,
-    status_code: i16,
+    params: RecordUsageParams,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"INSERT INTO usage_records (tenant_id, project_id, consumer_id, api_key_id, endpoint, method, status_code)
         VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
-        tenant_id,
-        project_id,
-        consumer_id,
-        api_key_id,
-        endpoint,
-        method,
-        status_code,
+        params.tenant_id,
+        params.project_id,
+        params.consumer_id,
+        params.api_key_id,
+        params.endpoint,
+        params.method,
+        params.status_code,
     )
     .execute(pool)
     .await?;

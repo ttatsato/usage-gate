@@ -46,14 +46,13 @@ impl AuthCache for ValkeyAuthCache {
     }
 
     async fn delete(&self, key_hash: &str) {
-        if let Ok(mut conn) = self.client.get_multiplexed_async_connection().await {
-            if let Err(e) = redis::cmd("DEL")
+        if let Ok(mut conn) = self.client.get_multiplexed_async_connection().await
+            && let Err(e) = redis::cmd("DEL")
                 .arg(key_hash)
                 .query_async::<i32>(&mut conn)
                 .await
-            {
-                eprintln!("failed to delete auth cache key {}: {}", key_hash, e);
-            }
+        {
+            eprintln!("failed to delete auth cache key {}: {}", key_hash, e);
         }
     }
 }
