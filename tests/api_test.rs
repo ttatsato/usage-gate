@@ -33,7 +33,12 @@ async fn setup() -> (axum::Router, PgPool, Arc<dyn RateLimiter>) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(300);
 
-    let app = usage_gate::create_router(pool.clone(), rate_limiter.clone(), auth_cache, auth_cache_ttl_secs);
+    let app = usage_gate::create_router(
+        pool.clone(),
+        rate_limiter.clone(),
+        auth_cache,
+        auth_cache_ttl_secs,
+    );
     (app, pool, rate_limiter)
 }
 
