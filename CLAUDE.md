@@ -89,7 +89,8 @@ docker exec -it usage-gate-db psql -U usage_gate -d usage_gate -c '\dt'
 - **`auth → quota → metering`** の順に middleware が積まれている（`src/lib.rs`）。順序変更はテナント解決や計測の前提を壊すので慎重に。
 - **token bucket のバースト上限は DB 管理**（`plans` テーブルの rate_limit カラム群）。コード側で定数化しないこと。直近コミット `e76793f` 参照。
 - **Valkey → DB 同期** は `src/main.rs` で `tokio::spawn` 起動の 1 時間間隔バッチ。`sync-to-db` サブコマンドでも手動実行可能。
-- **`SQLX_OFFLINE=true`** でのビルドは `.sqlx/` の query キャッシュに依存。スキーマを変えたら `cargo sqlx prepare` を忘れない。
+- **`SQLX_OFFLINE=true`** でのビルドは `.sqlx/` の query キャッシュに依存。スキーマを変えたら `cargo sqlx prepare -- --all-targets` を忘れない。**`--all-targets` を省略すると `tests/` 内のクエリがキャッシュされず CI が落ちる。**
+- **`.sqlx/` はリポジトリにコミットする**（`.gitignore` に入れない）。CI は DB なしで `SQLX_OFFLINE=true` ビルドするため、キャッシュが届かないとエラーになる。
 - **RATE_LIMITER が未設定 / 非対応値の場合 main.rs で panic**。production 起動スクリプトでは必ず set。
 
 ## 変更時のチェックリスト
@@ -106,7 +107,7 @@ migration を追加した場合：
 
 ```bash
 sqlx migrate run
-cargo sqlx prepare     # SQLX_OFFLINE=true でビルド通すため
+cargo sqlx prepare -- --all-targets     # tests/ 含む全クエリをキャッシュ。生成した .sqlx/ もコミットする
 ```
 
 ## ドキュメント

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id as \"consumer_id!\", p.monthly_request_quota\n        FROM consumers c\n        LEFT JOIN plans p ON p.id = c.plan_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consumer_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "monthly_request_quota",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "6c019cc97f4e81dff04dcf8c89b1eeeabb479183eeae00ef547e97cb7d49a80f"
+}

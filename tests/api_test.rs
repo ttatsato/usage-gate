@@ -4,6 +4,8 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower::ServiceExt;
+use usage_gate::adapters::auth_cache::AuthCache;
+use usage_gate::adapters::auth_cache::valkey::ValkeyAuthCache;
 use usage_gate::adapters::rate_limiter::valkey::ValkeyRateLimiter;
 use usage_gate::adapters::rate_limiter::{RateLimit, RateLimitPeriod, RateLimiter};
 
@@ -21,7 +23,22 @@ async fn setup() -> (axum::Router, PgPool, Arc<dyn RateLimiter>) {
             .expect("Failed to connect to Valkey"),
     );
 
-    let app = usage_gate::create_router(pool.clone(), rate_limiter.clone());
+    let auth_cache: Arc<dyn AuthCache> = Arc::new(
+        ValkeyAuthCache::new(&valkey_url)
+            .await
+            .expect("Failed to connect to Valkey for auth cache"),
+    );
+    let auth_cache_ttl_secs: u64 = std::env::var("AUTH_CACHE_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300);
+
+    let app = usage_gate::create_router(
+        pool.clone(),
+        rate_limiter.clone(),
+        auth_cache,
+        auth_cache_ttl_secs,
+    );
     (app, pool, rate_limiter)
 }
 
