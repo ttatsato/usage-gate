@@ -1,5 +1,6 @@
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
+use usage_gate::adapters::auth_cache::valkey::ValkeyAuthCache;
 use usage_gate::adapters::rate_limiter::valkey::ValkeyRateLimiter;
 use usage_gate::create_router;
 use usage_gate::routes::system::quota_sync::do_sync_to_db;
@@ -50,6 +51,17 @@ async fn main() {
         None => {}
     }
 
+    let auth_cache_ttl_secs =
+        std::env::var("AUTH_CACHE_TTL_SECS").expect("AUTH_CACHE_TTL_SECS not set");
+    let ttl_seconds: u64 = auth_cache_ttl_secs
+        .parse()
+        .expect("AUTH_CACHE_TTL_SECS must be a valid number");
+    let valkey_auth_cache = Arc::new(
+        ValkeyAuthCache::new(&url)
+            .await
+            .expect("Failed to connect to Valkey"),
+    );
+
     // 定期バッチ: 1時間ごとに Valkey → DB 同期
     {
         let pool = pool.clone();
@@ -68,7 +80,7 @@ async fn main() {
     }
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
-    let app = create_router(pool, rate_limiter);
+    let app = create_router(pool, rate_limiter, valkey_auth_cache, ttl_seconds);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port)
         .await
