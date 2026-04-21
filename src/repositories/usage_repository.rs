@@ -13,10 +13,7 @@ pub struct RecordUsageParams {
     pub status_code: i16,
 }
 
-pub async fn record_usage(
-    pool: &PgPool,
-    params: RecordUsageParams,
-) -> Result<(), sqlx::Error> {
+pub async fn record_usage(pool: &PgPool, params: RecordUsageParams) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"INSERT INTO usage_records (tenant_id, project_id, consumer_id, api_key_id, endpoint, method, status_code)
         VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
