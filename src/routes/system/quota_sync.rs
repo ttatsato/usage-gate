@@ -26,7 +26,7 @@ pub async fn do_sync_to_db(pool: &PgPool, limiter: &dyn RateLimiter) -> Result<i
 
     // consumer + plan 情報を取得
     let rows = sqlx::query!(
-        r#"SELECT c.id as consumer_id, p.monthly_request_quota
+        r#"SELECT c.id as "consumer_id!", p.monthly_request_quota
         FROM consumers c
         LEFT JOIN plans p ON p.id = c.plan_id"#,
     )

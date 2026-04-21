@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower::ServiceExt;
-use usage_gate::adapters::rate_limiter::{RateLimit, RateLimitPeriod, RateLimiter};
 use usage_gate::adapters::rate_limiter::valkey::ValkeyRateLimiter;
+use usage_gate::adapters::rate_limiter::{RateLimit, RateLimitPeriod, RateLimiter};
 
 async fn setup() -> (axum::Router, PgPool, Arc<dyn RateLimiter>) {
     dotenvy::dotenv().ok();
@@ -403,7 +403,10 @@ async fn rate_limiter_does_not_over_admit_under_concurrency() {
 
     let consumer_id = uuid::Uuid::new_v4();
     let max = 5i64;
-    let limits = vec![RateLimit { period: RateLimitPeriod::PerSecond, max_requests: max }];
+    let limits = vec![RateLimit {
+        period: RateLimitPeriod::PerSecond,
+        max_requests: max,
+    }];
 
     let n = 50usize;
     let mut handles = Vec::with_capacity(n);
