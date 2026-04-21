@@ -1,91 +1,43 @@
 # UsageGate
 
-Usage-aware, multi-tenant API gateway built in Rust
+## Conncept / コンセプト
+クライアントサーバーとAPIサーバーの前に挟むだけで公開APIのビジネスモデルを展開できる。  
+*Just place it between your client and API server to instantly deploy a public API business model.*
 
-UsageGate is a lightweight developer-focused API gateway that provides:
-	•	API key authentication
-	•	Multi-tenant isolation
-	•	Usage metering
-	•	Rate limiting
-	•	Quota enforcement
+### What's focus on ? / どんな悩みを解決するか
+「従量課金性のAPIサービスを開発したい」「自社SaaSに公開API機能を搭載したい」という開発者体験を改善するためのツールです。  
+*This is a tool to improve the developer experience for those who want to build pay-per-use API services or add a public API feature to their own SaaS product.*
 
-Designed as a foundation for usage-based billing systems and AI-ready APIs.
+APIGateWayとしてサーバーを立ててもらうことで、安全でハイパフォーマンスな公開APIビジネスを構築することができます。  
+*By running this as an API Gateway, you can build a secure and high-performance public API business.*
 
-# 🚀 Overview
 
-Modern SaaS and AI APIs require:
-	•	Secure API exposure
-	•	Fine-grained usage tracking
-	•	Rate limiting and abuse protection
-	•	Flexible billing integration
+### What kind of functions / どんな機能を提供するか？
+- エンドユーザー向けにAPI Keyの発行・管理機能
+  *API Key issuance and management for end users*
+- マルチテナント管理
+  *Multi-tenant management*
+- API Keyの認証認可機能
+  *API Key authentication and authorization*
+- 公開APIの従量設定・制御機能(クォータ・レート制限)
+  *Usage configuration and control for public APIs (quota and rate limiting)*
+- 不正利用防止
+  *Fraud and abuse prevention*
+- ユーザーごとの毎月の従量確認ダッシュボード
+  *Monthly usage dashboard per user*
 
-However, existing solutions are often:
-	•	Overly complex (DevOps-heavy)
-	•	Fragmented across multiple tools
-	•	Not optimized for developer-first usage
-
-UsageGate aims to solve this by providing a simple, extensible, and high-performance gateway layer.
-
-⸻
-
-# 🧩 Core Features
-
-1. API Key Authentication
-	•	Header-based API key validation
-	•	Key rotation & revocation (planned)
-	•	Tenant-aware authentication
-
-⸻
-
-2. Multi-Tenant Architecture
-	•	Tenant isolation at request level
-	•	Per-tenant configuration
-	•	Plan-based access control
-
-⸻
-
-3. Usage Metering
-	•	Request-level usage tracking
-	•	Endpoint-based aggregation
-	•	Tenant/API key granularity
-
-⸻
-
-4. Rate Limiting
-	•	Per-tenant / per-key rate limiting
-	•	Sliding window (initially fixed window)
-	•	Redis-backed counters
-
-⸻
-
-5. Quota Enforcement
-	•	Monthly usage limits
-	•	Plan-based quota control
-	•	Over-quota request rejection
-
-⸻
-
-6. Middleware-based Architecture
-	•	Auth middleware
-	•	Tenant resolution middleware
-	•	Metering middleware
-	•	Rate-limiting middleware
-
-⸻
-
-# 🏗 Architecture (Phase 1)
+# 🏗 Architecture / アーキテクチャ
 
 Single-node architecture (monolith for simplicity and performance):
 
-Axum (Rust)
-├── Auth Middleware
-├── Tenant Middleware
-├── Metering Middleware
-├── Rate Limit Middleware
-├── API Handlers
-│
-├── PostgreSQL (persistent data)
-└── Redis (rate limit & counters)
+Axum（Rust）
+├── 認証ミドルウェア *(Authentication middleware)*  
+├── テナント解決 *(Tenant resolution)*  
+├── Usage計測 *(Usage metering)*  
+├── レート制限 *(Rate limiting)*  
+├── APIハンドラ *(API handler)*  
+├── PostgreSQL（永続データ） *(PostgreSQL - persistent data)*  
+└── ValKey（カウンタ・レート制限） *(ValKey - counter & rate limiting)*  
 
 
 ⸻
@@ -96,7 +48,7 @@ Axum (Rust)
 	•	Async runtime: Tokio
 	•	Database: PostgreSQL
 	•	Cache / Rate limit: Redis
-	•	Containerization: Docker (optional)
+	•	Containerization: Docker
 
 ⸻
 
@@ -107,45 +59,9 @@ Authentication
 Header: x-api-key: <API_KEY>
 
 
-⸻
-
-Core Endpoints
-
-Health
-
-GET /health
-
-
-⸻
-
-Proxy (example)
-
-POST /proxy/{service}
-
-
-⸻
-
-Admin APIs (simplified)
-
-Create Tenant
-
-POST /admin/tenants
-
-Create API Key
-
-POST /admin/api-keys
-
-Get Usage
-
-GET /admin/usage
-
-
-⸻
-
 # 🧪 Testing Strategy
 	•	Integration tests (API behavior)
 	•	Concurrency tests (rate limit & metering)
-	•	Tenant isolation tests
 	•	Failure scenario tests
 
 ⸻
@@ -158,135 +74,15 @@ GET /admin/usage
 
 ⸻
 
-# 🧠 Why Rust?
-
-UsageGate is not just an API service.
-It is a high-throughput, correctness-critical gateway layer.
-
-Rust is chosen for the following reasons:
-
-⸻
-
-## 1. Safe Concurrency
-
-UsageGate handles:
-	•	Concurrent requests
-	•	Shared state (rate limits, usage counters)
-	•	Multi-tenant isolation
-
-Rust’s ownership model prevents:
-	•	Data races
-	•	Invalid memory access
-	•	Unsafe shared state mutations
-
-⸻
-
-## 2. High Performance
-
-Gateway layers require:
-	•	Low latency
-	•	High throughput
-	•	Efficient async I/O
-
-Rust provides:
-	•	Zero-cost abstractions
-	•	No garbage collection pauses
-	•	Efficient async execution via Tokio
-
-⸻
-
-## 3. Strong Type Safety
-
-Critical domain concepts:
-	•	TenantId
-	•	ApiKeyId
-	•	Plan
-	•	UsageUnit
-	•	Quota
-
-are enforced at compile time, reducing runtime errors.
-
-⸻
-
-## 4. Explicit Error Handling
-
-UsageGate must handle failures such as:
-	•	Invalid API keys
-	•	Rate limit exceeded
-	•	Quota exceeded
-	•	Downstream failure
-
-Rust’s Result type ensures all failure paths are explicitly handled.
-
-⸻
-
-## 5. Reliable Middleware Layer
-
-All requests pass through:
-	•	Authentication
-	•	Metering
-	•	Rate limiting
-
-Rust enables writing robust and predictable middleware pipelines.
-
-⸻
-
 # 🔮 Roadmap
 
-## Phase 1 (MVP)
-	•	API key auth
-	•	Usage tracking
-	•	Rate limiting
-	•	Basic tenant support
+https://github.com/users/ttatsato/projects/3
 
-⸻
-
-## Phase 2
-	•	Plan management
-	•	Webhook events
-	•	Observability improvements
-
-⸻
-
-## Phase 3
-	•	Stripe integration
-	•	Usage-based billing
-	•	Subscription management
-
-⸻
-
-## Phase 4
-	•	Model Context Protocol support
-	•	AI agent integration
-	•	Tool-level metering
-
-⸻
-
-# 💡 Use Cases
-	•	SaaS APIs with usage-based billing
-	•	AI APIs (LLM / tool APIs)
-	•	Internal API governance
-	•	Developer platforms
-
-⸻
 
 # 🧭 Positioning
 
-UsageGate is:
-	•	Not a full infrastructure gateway like enterprise solutions
-	•	Not just an analytics tool
-
-It is:
-
 👉 A developer-first, usage-aware API gateway for modern SaaS and AI applications
 
-⸻
-
-# 📌 Status
-
-🚧 Work in progress (Phase 1)
-
-⸻
 
 # 🧾 License
 
