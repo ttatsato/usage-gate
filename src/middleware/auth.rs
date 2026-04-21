@@ -35,46 +35,49 @@ pub async fn auth(
 
     let key_hash = hash_api_key(api_key);
 
-    if let Some(json) = auth_cache.get(&key_hash).await {
-        let authed: AuthedApiKey = serde_json::from_str(&json).map_err(|_| {
+    if let Some(cached_json) = auth_cache.get(&key_hash).await {
+        match serde_json::from_str::<AuthedApiKey>(&cached_json) {
+            Ok(authed) => {
+                let mut request = request;
+                request.extensions_mut().insert(authed);
+                return Ok(next.run(request).await);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    key_hash = %key_hash,
+                    error = %e,
+                    "Auth cache deserialization failed; falling back to DB lookup"
+                );
+            }
+        }
+    }
+
+    // DB lookup（キャッシュミス or デシリアライズ失敗のフォールバック）
+    let row = api_key_repository::find_active_by_key_hash(&pool, &key_hash)
+        .await
+        .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Internal server error"})),
             )
         })?;
-        let mut request = request;
-        request.extensions_mut().insert(authed);
-        return Ok(next.run(request).await);
-    } else {
-        let row = api_key_repository::find_active_by_key_hash(&pool, &key_hash)
-            .await
-            .map_err(|_| {
+
+    match row {
+        Some(authed) => {
+            let json = serde_json::to_string(&authed).map_err(|_| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({"error": "Internal server error"})),
                 )
             })?;
-
-        match row {
-            Some(authed) => {
-                let json = serde_json::to_string(&authed).map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({"error": "Internal server error"})),
-                    )
-                })?;
-                // キャッシュに保管
-                auth_cache.set(&key_hash, &json, ttl_secs).await;
-                // リクエストの extensions にテナント情報を添付
-                // 後続のミドルウェアやハンドラから取り出せる
-                let mut request = request;
-                request.extensions_mut().insert(authed);
-                Ok(next.run(request).await)
-            }
-            None => Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "Unauthorized"})),
-            )),
+            auth_cache.set(&key_hash, &json, ttl_secs).await;
+            let mut request = request;
+            request.extensions_mut().insert(authed);
+            Ok(next.run(request).await)
         }
+        None => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Unauthorized"})),
+        )),
     }
 }
