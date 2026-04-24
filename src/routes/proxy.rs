@@ -14,6 +14,7 @@ use sqlx::PgPool;
 // /proxy/{name}/{*rest_path} のリクエストを upstream_services の base_url に転送する
 pub async fn proxy(
     State(pool): State<PgPool>,
+    State(client): State<reqwest::Client>,
     Extension(authed): Extension<AuthedApiKey>,
     Path((name, rest_path)): Path<(String, String)>,
     request: Request,
@@ -62,8 +63,7 @@ pub async fn proxy(
         })?
         .to_bytes();
 
-    // reqwest で転送
-    let client = reqwest::Client::new();
+    // reqwest で転送（共有 Client を利用してコネクションプール / keep-alive を有効化）
     let mut req = client
         .request(to_reqwest_method(&method), &target_url)
         .body(body_bytes.to_vec());

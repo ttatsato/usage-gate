@@ -38,6 +38,7 @@ async fn setup() -> (axum::Router, PgPool, Arc<dyn RateLimiter>) {
         rate_limiter.clone(),
         auth_cache,
         auth_cache_ttl_secs,
+        reqwest::Client::new(),
     );
     (app, pool, rate_limiter)
 }
