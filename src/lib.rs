@@ -6,7 +6,9 @@ pub mod routes;
 pub mod utils;
 
 use axum::{
-    Router, middleware as axum_middleware,
+    Router,
+    extract::FromRef,
+    middleware as axum_middleware,
     routing::{get, post},
 };
 use sqlx::PgPool;
@@ -28,11 +30,30 @@ use routes::proxy::proxy;
 use routes::system::quota_sync::sync_to_db;
 use std::sync::Arc;
 
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: PgPool,
+    pub http_client: reqwest::Client,
+}
+
+impl FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> PgPool {
+        state.pool.clone()
+    }
+}
+
+impl FromRef<AppState> for reqwest::Client {
+    fn from_ref(state: &AppState) -> reqwest::Client {
+        state.http_client.clone()
+    }
+}
+
 pub fn create_router(
     pool: PgPool,
     rate_limiter: Arc<dyn RateLimiter>,
     auth_cache: Arc<dyn AuthCache>,
     auth_cache_ttl_secs: u64,
+    http_client: reqwest::Client,
 ) -> Router {
     let protected_routes = Router::new()
         .route("/proxy/test", get(|| async { "ok" }))
@@ -69,5 +90,5 @@ pub fn create_router(
     public_routes
         .merge(protected_routes)
         .merge(system_routes)
-        .with_state(pool)
+        .with_state(AppState { pool, http_client })
 }

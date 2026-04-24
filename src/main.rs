@@ -80,7 +80,14 @@ async fn main() {
     }
 
     let port = std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string());
-    let app = create_router(pool, rate_limiter, valkey_auth_cache, ttl_seconds);
+    let http_client = reqwest::Client::new();
+    let app = create_router(
+        pool,
+        rate_limiter,
+        valkey_auth_cache,
+        ttl_seconds,
+        http_client,
+    );
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_string() + &port)
         .await
