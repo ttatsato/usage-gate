@@ -2,11 +2,11 @@ use super::{RateLimit, RateLimitPeriod, RateLimiter, RateLimiterError};
 use async_trait::async_trait;
 use chrono::{Datelike, Utc};
 use redis::AsyncCommands;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use uuid::Uuid;
 
 pub struct ValkeyRateLimiter {
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
 }
 
 impl ValkeyRateLimiter {
@@ -14,8 +14,7 @@ impl ValkeyRateLimiter {
         let client =
             redis::Client::open(url).map_err(|e| RateLimiterError::Internal(e.to_string()))?;
 
-        let mut conn = client
-            .get_multiplexed_async_connection()
+        let mut conn = ConnectionManager::new(client)
             .await
             .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
         redis::cmd("PING")

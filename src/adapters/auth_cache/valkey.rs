@@ -1,15 +1,15 @@
 use crate::adapters::auth_cache::AuthCache;
 use async_trait::async_trait;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 
 pub struct ValkeyAuthCache {
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
 }
 
 impl ValkeyAuthCache {
     pub async fn new(url: &str) -> Result<Self, redis::RedisError> {
         let client = redis::Client::open(url)?;
-        let mut conn = client.get_multiplexed_async_connection().await?;
+        let mut conn = ConnectionManager::new(client).await?;
 
         redis::cmd("PING")
             .query_async::<String>(&mut conn)
