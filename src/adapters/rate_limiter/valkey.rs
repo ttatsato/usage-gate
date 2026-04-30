@@ -2,10 +2,11 @@ use super::{RateLimit, RateLimitPeriod, RateLimiter, RateLimiterError};
 use async_trait::async_trait;
 use chrono::{Datelike, Utc};
 use redis::AsyncCommands;
+use redis::aio::ConnectionManager;
 use uuid::Uuid;
 
 pub struct ValkeyRateLimiter {
-    client: redis::Client,
+    conn: ConnectionManager,
 }
 
 impl ValkeyRateLimiter {
@@ -13,9 +14,7 @@ impl ValkeyRateLimiter {
         let client =
             redis::Client::open(url).map_err(|e| RateLimiterError::Internal(e.to_string()))?;
 
-        // 起動時に接続確認
-        let mut conn = client
-            .get_multiplexed_async_connection()
+        let mut conn = ConnectionManager::new(client)
             .await
             .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
         redis::cmd("PING")
@@ -23,7 +22,7 @@ impl ValkeyRateLimiter {
             .await
             .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
 
-        Ok(Self { client })
+        Ok(Self { conn })
     }
 
     fn tokens_key(&self, consumer_id: Uuid, period: &RateLimitPeriod) -> String {
@@ -157,11 +156,7 @@ impl RateLimiter for ValkeyRateLimiter {
         consumer_id: Uuid,
         limits: &[RateLimit],
     ) -> Result<bool, RateLimiterError> {
-        let mut conn = self
-            .client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
+        let mut conn = self.conn.clone();
 
         let now = Utc::now().timestamp_millis() as f64 / 1000.0;
 
@@ -198,11 +193,7 @@ impl RateLimiter for ValkeyRateLimiter {
         period: &RateLimitPeriod,
         max_requests: i64,
     ) -> Result<i64, RateLimiterError> {
-        let mut conn = self
-            .client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| RateLimiterError::Internal(e.to_string()))?;
+        let mut conn = self.conn.clone();
 
         let tokens_key = self.tokens_key(consumer_id, period);
         let last_key = self.last_key(consumer_id, period);
